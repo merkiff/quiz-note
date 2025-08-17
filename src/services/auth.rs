@@ -104,6 +104,8 @@ impl AuthService {
         let location = window().unwrap().location();
         let hash = location.hash().unwrap_or_default();
 
+        web_sys::console::log_1(&format!("Processing auth callback with hash: {}", hash).into());
+
         if hash.contains("access_token") {
             // URL fragment에서 토큰 추출
             let params: std::collections::HashMap<String, String> = hash
@@ -118,6 +120,8 @@ impl AuthService {
             if let (Some(access_token), Some(refresh_token)) =
                 (params.get("access_token"), params.get("refresh_token"))
             {
+                web_sys::console::log_1(&"Tokens found, getting user info...".into());
+
                 // 사용자 정보 가져오기
                 let user = Self::get_user_info(access_token).await?;
 
@@ -130,11 +134,12 @@ impl AuthService {
 
                 Self::save_session(session);
 
-                // URL 정리
-                location.set_hash("").unwrap();
+                web_sys::console::log_1(&"Session saved successfully".into());
 
-                // 홈으로 이동
-                location.set_href("/").unwrap();
+                // URL 정리 - 해시 제거하고 홈으로
+                location.set_href("/quiz-note/").unwrap();
+            } else {
+                return Err("토큰을 찾을 수 없습니다".to_string());
             }
         }
 

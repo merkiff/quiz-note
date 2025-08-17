@@ -10,17 +10,36 @@ use yew_router::prelude::*;
 use routes::{switch, Route};
 use wasm_bindgen_futures::spawn_local;
 use services::AuthService;
+use web_sys::window;
 
 #[function_component(App)]
 fn app() -> Html {
     let is_checking_auth = use_state(|| true);
+    let force_render = use_force_update();
 
     // 인증 콜백 처리
     {
         let is_checking_auth = is_checking_auth.clone();
+        let force_render = force_render.clone();
+        
         use_effect_with((), move |_| {
             spawn_local(async move {
-                let _ = AuthService::handle_auth_callback().await;
+                // URL 해시 확인
+                let hash = window().unwrap().location().hash().unwrap_or_default();
+                
+                if hash.contains("access_token") {
+                    // 콜백 처리
+                    match AuthService::handle_auth_callback().await {
+                        Ok(_) => {
+                            // 성공 시 강제 리렌더링
+                            force_render.force_update();
+                        }
+                        Err(e) => {
+                            web_sys::console::error_1(&format!("Auth callback error: {}", e).into());
+                        }
+                    }
+                }
+                
                 is_checking_auth.set(false);
             });
         });
