@@ -27,13 +27,22 @@ impl AuthService {
         let url = format!("{}/auth/v1/otp", SUPABASE_CONFIG.url);
 
         // 현재 페이지의 전체 URL 사용 (해시 제외)
+        // GitHub Pages 배포 여부 확인
         let location = window().unwrap().location();
-        let redirect_url = format!(
-            "{}//{}{}",
-            location.protocol().unwrap(),
-            location.host().unwrap(),
-            location.pathname().unwrap()
-        );
+        let hostname = location.hostname().unwrap();
+        // 명시적으로 전체 URL 설정
+        let redirect_url = if hostname.contains("github.io") {
+            // GitHub Pages인 경우 전체 경로 포함
+            format!("https://{}/quiz-note/", hostname)
+        } else {
+            // 로컬 개발 환경
+            format!(
+                "{}//{}{}",
+                location.protocol().unwrap(),
+                location.host().unwrap(),
+                location.pathname().unwrap()
+            )
+        };
 
         web_sys::console::log_1(&format!("Email redirect URL: {}", redirect_url).into());
 
