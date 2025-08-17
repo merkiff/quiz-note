@@ -1,8 +1,8 @@
+use crate::config::SUPABASE_CONFIG;
 use gloo::storage::{LocalStorage, Storage};
 use gloo_net::http::Request;
 use serde::{Deserialize, Serialize};
 use web_sys::window;
-use crate::config::SUPABASE_CONFIG;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
@@ -25,12 +25,18 @@ impl AuthService {
     // Magic Link 로그인 요청
     pub async fn sign_in_with_email(email: &str) -> Result<(), String> {
         let url = format!("{}/auth/v1/otp", SUPABASE_CONFIG.url);
-        
+
+        let redirect_url = if window().unwrap().location().hostname().unwrap() == "localhost" {
+            window().unwrap().location().origin().unwrap()
+        } else {
+            "https://YOUR_USERNAME.github.io/quiz-note".to_string() // 실제 GitHub Pages URL
+        };
+
         let body = serde_json::json!({
             "email": email,
             "type": "magiclink",
             "options": {
-                "emailRedirectTo": window().unwrap().location().origin().unwrap()
+                "emailRedirectTo": redirect_url
             }
         });
 
@@ -46,7 +52,10 @@ impl AuthService {
         if response.ok() {
             Ok(())
         } else {
-            let error = response.text().await.unwrap_or_else(|_| "로그인 요청 실패".to_string());
+            let error = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "로그인 요청 실패".to_string());
             Err(error)
         }
     }
@@ -55,7 +64,7 @@ impl AuthService {
     pub async fn sign_out() -> Result<(), String> {
         if let Some(session) = Self::get_session() {
             let url = format!("{}/auth/v1/logout", SUPABASE_CONFIG.url);
-            
+
             let _ = Request::post(&url)
                 .header("apikey", SUPABASE_CONFIG.anon_key)
                 .header("Authorization", &format!("Bearer {}", session.access_token))
@@ -64,13 +73,9 @@ impl AuthService {
         }
 
         LocalStorage::delete(Self::SESSION_KEY);
-        
-        window()
-            .unwrap()
-            .location()
-            .set_href("/login")
-            .unwrap();
-            
+
+        window().unwrap().location().set_href("/login").unwrap();
+
         Ok(())
     }
 
@@ -110,24 +115,24 @@ impl AuthService {
                 })
                 .collect();
 
-            if let (Some(access_token), Some(refresh_token)) = 
-                (params.get("access_token"), params.get("refresh_token")) {
-                
+            if let (Some(access_token), Some(refresh_token)) =
+                (params.get("access_token"), params.get("refresh_token"))
+            {
                 // 사용자 정보 가져오기
                 let user = Self::get_user_info(access_token).await?;
-                
+
                 // 세션 저장
                 let session = Session {
                     access_token: access_token.clone(),
                     refresh_token: refresh_token.clone(),
                     user,
                 };
-                
+
                 Self::save_session(session);
-                
+
                 // URL 정리
                 location.set_hash("").unwrap();
-                
+
                 // 홈으로 이동
                 location.set_href("/").unwrap();
             }
@@ -139,7 +144,7 @@ impl AuthService {
     // 사용자 정보 가져오기
     async fn get_user_info(access_token: &str) -> Result<User, String> {
         let url = format!("{}/auth/v1/user", SUPABASE_CONFIG.url);
-        
+
         let response = Request::get(&url)
             .header("apikey", SUPABASE_CONFIG.anon_key)
             .header("Authorization", &format!("Bearer {}", access_token))
@@ -147,10 +152,7 @@ impl AuthService {
             .await
             .map_err(|e| e.to_string())?;
 
-        let user_data: serde_json::Value = response
-            .json()
-            .await
-            .map_err(|e| e.to_string())?;
+        let user_data: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
 
         Ok(User {
             id: user_data["id"].as_str().unwrap_or_default().to_string(),
