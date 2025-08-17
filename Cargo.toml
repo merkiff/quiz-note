@@ -1,0 +1,44 @@
+[package]
+name = "quiz-note"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Yew 프레임워크
+yew = { version = "0.21", features = ["csr"] }
+yew-router = "0.18"
+
+# 웹 관련
+web-sys = { version = "0.3", features = [
+    "HtmlInputElement",
+    "HtmlTextAreaElement",
+    "HtmlElement",          # HtmlSelectElement 대신 사용
+    "HtmlSelectElement",
+    "Storage",
+    "Window",
+    "Event",
+    "EventTarget",
+    "Element",
+] }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+
+# 유틸리티
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde", "wasmbind"] }
+uuid = { version = "1.6", features = ["v4", "serde", "js"] }
+gloo = "0.11"
+
+# 로깅
+log = "0.4"
+wasm-logger = "0.2"
+
+# HTTP 클라이언트
+gloo-net = "0.5"
+
+# 비동기 처리
+futures = "0.3"
+
+# 환경 변수 (Supabase 키 저장)
+once_cell = "1.19"
