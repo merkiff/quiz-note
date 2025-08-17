@@ -31,17 +31,10 @@ impl AuthService {
         let location = window().unwrap().location();
         let hostname = location.hostname().unwrap();
         // 명시적으로 전체 URL 설정
-        let redirect_url = if hostname.contains("github.io") {
-            // GitHub Pages인 경우 전체 경로 포함
-            format!("https://{}/quiz-note/", hostname)
+        let redirect_url = if hostname == "localhost" {
+            "http://localhost:8080/"
         } else {
-            // 로컬 개발 환경
-            format!(
-                "{}//{}{}",
-                location.protocol().unwrap(),
-                location.host().unwrap(),
-                location.pathname().unwrap()
-            )
+            "https://merkiff.github.io/quiz-note/" // 전체 경로 포함!
         };
 
         web_sys::console::log_1(&format!("Email redirect URL: {}", redirect_url).into());
