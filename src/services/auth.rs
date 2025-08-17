@@ -43,7 +43,8 @@ impl AuthService {
             "email": email,
             "type": "magiclink",
             "options": {
-                "emailRedirectTo": redirect_url
+                "emailRedirectTo": redirect_url,
+                "shouldCreateUser": true
             }
         });
 
@@ -111,6 +112,15 @@ impl AuthService {
         let location = window().unwrap().location();
         let hash = location.hash().unwrap_or_default();
 
+        // 현재 경로 확인
+        let pathname = location.pathname().unwrap();
+
+        // quiz-note 경로가 아니면 리다이렉트
+        if !pathname.contains("quiz-note") && hash.contains("access_token") {
+            let new_url = format!("https://merkiff.github.io/quiz-note/{}", hash);
+            location.set_href(&new_url).unwrap();
+            return Ok(());
+        }
         web_sys::console::log_1(&format!("Processing auth callback with hash: {}", hash).into());
 
         if hash.contains("access_token") {
