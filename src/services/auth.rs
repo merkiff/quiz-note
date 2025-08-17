@@ -23,18 +23,15 @@ impl AuthService {
     const SESSION_KEY: &'static str = "quiz_note_session";
 
     // Magic Link 로그인 요청
+    // sign_in_with_email 수정
     pub async fn sign_in_with_email(email: &str) -> Result<(), String> {
         let url = format!("{}/auth/v1/otp", SUPABASE_CONFIG.url);
 
-        // 현재 페이지의 전체 URL 사용 (해시 제외)
-        // GitHub Pages 배포 여부 확인
-        let location = window().unwrap().location();
-        let hostname = location.hostname().unwrap();
-        // 명시적으로 전체 URL 설정
-        let redirect_url = if hostname == "localhost" {
+        // HashRouter는 quiz-note 페이지로 직접 리다이렉트
+        let redirect_url = if window().unwrap().location().hostname().unwrap() == "localhost" {
             "http://localhost:8080/"
         } else {
-            "https://merkiff.github.io/quiz-note/" // 전체 경로 포함!
+            "https://merkiff.github.io/quiz-note/"
         };
 
         web_sys::console::log_1(&format!("Email redirect URL: {}", redirect_url).into());
@@ -43,7 +40,7 @@ impl AuthService {
             "email": email,
             "type": "magiclink",
             "options": {
-                "emailRedirectTo": "https://merkiff.github.io/quiz-note/",
+                "emailRedirectTo": redirect_url,
                 "shouldCreateUser": true
             }
         });
@@ -64,6 +61,7 @@ impl AuthService {
                 .text()
                 .await
                 .unwrap_or_else(|_| "로그인 요청 실패".to_string());
+            web_sys::console::error_1(&format!("Supabase error: {}", error).into());
             Err(error)
         }
     }
@@ -107,46 +105,35 @@ impl AuthService {
         Self::get_session().map(|s| s.user)
     }
 
-    // Magic Link 콜백 처리
+    // Magic Link 콜백 처리 - HashRouter 버전
     pub async fn handle_auth_callback() -> Result<(), String> {
         let location = window().unwrap().location();
-        let hash = location.hash().unwrap_or_default();
-        let pathname = location.pathname().unwrap();
-        let href = location.href().unwrap();
+        let full_hash = location.hash().unwrap_or_default();
 
-        // 디버깅 로그
-        web_sys::console::log_1(&format!("Current URL: {}", href).into());
-        web_sys::console::log_1(&format!("Pathname: {}", pathname).into());
-        web_sys::console::log_1(&format!("Hash: {}", hash).into());
+        web_sys::console::log_1(&format!("Full hash: {}", full_hash).into());
 
-        // quiz-note 경로가 아니고 access_token이 있으면 리다이렉트
-        if !pathname.contains("quiz-note") && hash.contains("access_token") {
-            web_sys::console::log_1(&"Redirecting to quiz-note...".into());
+        // HashRouter에서는 #/#access_token=... 또는 #access_token=... 형태
+        if full_hash.contains("access_token") {
+            let token_string = if full_hash.contains("#/") {
+                // #/#access_token=... 형태 처리
+                full_hash.replace("#/", "")
+            } else {
+                // #access_token=... 형태 처리
+                full_hash.trim_start_matches('#').to_string()
+            };
 
-            // window.location.replace 사용 (히스토리에 남지 않음)
-            let new_url = format!("https://merkiff.github.io/quiz-note/{}", hash);
-            web_sys::console::log_1(&format!("Redirecting to: {}", new_url).into());
-
-            location.replace(&new_url).unwrap_or_else(|e| {
-                web_sys::console::error_1(&format!("Redirect failed: {:?}", e).into());
-            });
-
-            return Ok(());
-        }
-
-        // quiz-note 경로에서 토큰 처리
-        if pathname.contains("quiz-note") && hash.contains("access_token") {
-            web_sys::console::log_1(&"Processing auth token...".into());
-
-            // URL fragment에서 토큰 추출
-            let params: std::collections::HashMap<String, String> = hash
-                .trim_start_matches('#')
+            // 파라미터 파싱
+            let params: std::collections::HashMap<String, String> = token_string
                 .split('&')
                 .filter_map(|pair| {
                     let mut parts = pair.split('=');
                     Some((parts.next()?.to_string(), parts.next()?.to_string()))
                 })
                 .collect();
+
+            web_sys::console::log_1(
+                &format!("Parsed params: {:?}", params.keys().collect::<Vec<_>>()).into(),
+            );
 
             if let (Some(access_token), Some(refresh_token)) =
                 (params.get("access_token"), params.get("refresh_token"))
@@ -167,8 +154,11 @@ impl AuthService {
 
                 web_sys::console::log_1(&"Session saved successfully".into());
 
-                // URL 정리 - 해시 제거
-                location.set_hash("").unwrap();
+                // 홈으로 이동
+                location.set_hash("#/").unwrap();
+
+                // 페이지 새로고침으로 확실하게 처리
+                window().unwrap().location().reload().unwrap();
             }
         }
 

@@ -24,23 +24,23 @@ fn app() -> Html {
 
         use_effect_with((), move |_| {
             spawn_local(async move {
-                // 항상 콜백 처리 시도
+                // 페이지 로드 시 항상 콜백 체크
                 match AuthService::handle_auth_callback().await {
                     Ok(_) => {
-                        web_sys::console::log_1(&"Auth callback processed".into());
+                        web_sys::console::log_1(&"Auth callback check completed".into());
                     }
                     Err(e) => {
                         web_sys::console::error_1(&format!("Auth callback error: {}", e).into());
                     }
                 }
 
-                // URL에 토큰이 있었다면 리렌더링
+                is_checking_auth.set(false);
+
+                // 토큰이 있었으면 강제 리렌더링
                 let hash = window().unwrap().location().hash().unwrap_or_default();
                 if hash.contains("access_token") {
                     force_render.force_update();
                 }
-
-                is_checking_auth.set(false);
             });
         });
     }
@@ -57,7 +57,7 @@ fn app() -> Html {
     let current_user = AuthService::get_current_user();
 
     html! {
-        <BrowserRouter>
+        <HashRouter>  // BrowserRouter를 HashRouter로 변경!
             <div class="min-h-screen bg-gray-50">
                 {if is_authenticated {
                     html! {
@@ -112,7 +112,7 @@ fn app() -> Html {
                     }
                 }}
             </div>
-        </BrowserRouter>
+        </HashRouter>
     }
 }
 
