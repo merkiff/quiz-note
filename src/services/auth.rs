@@ -111,19 +111,33 @@ impl AuthService {
     pub async fn handle_auth_callback() -> Result<(), String> {
         let location = window().unwrap().location();
         let hash = location.hash().unwrap_or_default();
-
-        // 현재 경로 확인
         let pathname = location.pathname().unwrap();
+        let href = location.href().unwrap();
 
-        // quiz-note 경로가 아니면 리다이렉트
+        // 디버깅 로그
+        web_sys::console::log_1(&format!("Current URL: {}", href).into());
+        web_sys::console::log_1(&format!("Pathname: {}", pathname).into());
+        web_sys::console::log_1(&format!("Hash: {}", hash).into());
+
+        // quiz-note 경로가 아니고 access_token이 있으면 리다이렉트
         if !pathname.contains("quiz-note") && hash.contains("access_token") {
+            web_sys::console::log_1(&"Redirecting to quiz-note...".into());
+
+            // window.location.replace 사용 (히스토리에 남지 않음)
             let new_url = format!("https://merkiff.github.io/quiz-note/{}", hash);
-            location.set_href(&new_url).unwrap();
+            web_sys::console::log_1(&format!("Redirecting to: {}", new_url).into());
+
+            location.replace(&new_url).unwrap_or_else(|e| {
+                web_sys::console::error_1(&format!("Redirect failed: {:?}", e).into());
+            });
+
             return Ok(());
         }
-        web_sys::console::log_1(&format!("Processing auth callback with hash: {}", hash).into());
 
-        if hash.contains("access_token") {
+        // quiz-note 경로에서 토큰 처리
+        if pathname.contains("quiz-note") && hash.contains("access_token") {
+            web_sys::console::log_1(&"Processing auth token...".into());
+
             // URL fragment에서 토큰 추출
             let params: std::collections::HashMap<String, String> = hash
                 .trim_start_matches('#')
@@ -153,14 +167,8 @@ impl AuthService {
 
                 web_sys::console::log_1(&"Session saved successfully".into());
 
-                // URL 정리 - 현재 origin과 pathname 사용
-                let origin = location.origin().unwrap();
-                let pathname = location.pathname().unwrap();
-                location
-                    .set_href(&format!("{}{}", origin, pathname))
-                    .unwrap();
-            } else {
-                return Err("토큰을 찾을 수 없습니다".to_string());
+                // URL 정리 - 해시 제거
+                location.set_hash("").unwrap();
             }
         }
 

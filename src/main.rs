@@ -1,16 +1,16 @@
 mod components;
+mod config;
 mod models;
 mod routes;
 mod services;
 mod storage;
-mod config;
 
+use routes::{switch, Route};
+use services::AuthService;
+use wasm_bindgen_futures::spawn_local;
+use web_sys::window;
 use yew::prelude::*;
 use yew_router::prelude::*;
-use routes::{switch, Route};
-use wasm_bindgen_futures::spawn_local;
-use services::AuthService;
-use web_sys::window;
 
 #[function_component(App)]
 fn app() -> Html {
@@ -21,25 +21,25 @@ fn app() -> Html {
     {
         let is_checking_auth = is_checking_auth.clone();
         let force_render = force_render.clone();
-        
+
         use_effect_with((), move |_| {
             spawn_local(async move {
-                // URL 해시 확인
-                let hash = window().unwrap().location().hash().unwrap_or_default();
-                
-                if hash.contains("access_token") {
-                    // 콜백 처리
-                    match AuthService::handle_auth_callback().await {
-                        Ok(_) => {
-                            // 성공 시 강제 리렌더링
-                            force_render.force_update();
-                        }
-                        Err(e) => {
-                            web_sys::console::error_1(&format!("Auth callback error: {}", e).into());
-                        }
+                // 항상 콜백 처리 시도
+                match AuthService::handle_auth_callback().await {
+                    Ok(_) => {
+                        web_sys::console::log_1(&"Auth callback processed".into());
+                    }
+                    Err(e) => {
+                        web_sys::console::error_1(&format!("Auth callback error: {}", e).into());
                     }
                 }
-                
+
+                // URL에 토큰이 있었다면 리렌더링
+                let hash = window().unwrap().location().hash().unwrap_or_default();
+                if hash.contains("access_token") {
+                    force_render.force_update();
+                }
+
                 is_checking_auth.set(false);
             });
         });
@@ -72,7 +72,7 @@ fn app() -> Html {
                                                 </Link<Route>>
                                             </div>
                                             <div class="hidden sm:ml-6 sm:flex sm:space-x-8">
-                                                <Link<Route> to={Route::Certificates} 
+                                                <Link<Route> to={Route::Certificates}
                                                     classes="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
                                                     {"자격증 관리"}
                                                 </Link<Route>>
