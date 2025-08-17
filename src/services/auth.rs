@@ -43,7 +43,7 @@ impl AuthService {
             "email": email,
             "type": "magiclink",
             "options": {
-                "emailRedirectTo": redirect_url,
+                "emailRedirectTo": "https://merkiff.github.io/quiz-note/",
                 "shouldCreateUser": true
             }
         });
