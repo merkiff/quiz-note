@@ -4,16 +4,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <base href="/quiz-note/"> <!-- 이 줄 추가 -->
     <title>QuizNote - 객관식 오답노트</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- 환경 변수 설정 -->
-    <script>
-        window.ENV = {
-            SUPABASE_URL: '%SUPABASE_URL%',
-            SUPABASE_ANON_KEY: '%SUPABASE_ANON_KEY%'
-        };
-    </script>
     <link data-trunk rel="rust" />
 </head>
 
