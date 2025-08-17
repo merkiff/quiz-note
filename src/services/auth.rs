@@ -26,11 +26,16 @@ impl AuthService {
     pub async fn sign_in_with_email(email: &str) -> Result<(), String> {
         let url = format!("{}/auth/v1/otp", SUPABASE_CONFIG.url);
 
-        let redirect_url = if window().unwrap().location().hostname().unwrap() == "localhost" {
-            window().unwrap().location().origin().unwrap()
-        } else {
-            "https://YOUR_USERNAME.github.io/quiz-note".to_string() // 실제 GitHub Pages URL
-        };
+        // 현재 페이지의 전체 URL 사용 (해시 제외)
+        let location = window().unwrap().location();
+        let redirect_url = format!(
+            "{}//{}{}",
+            location.protocol().unwrap(),
+            location.host().unwrap(),
+            location.pathname().unwrap()
+        );
+
+        web_sys::console::log_1(&format!("Email redirect URL: {}", redirect_url).into());
 
         let body = serde_json::json!({
             "email": email,
@@ -136,8 +141,12 @@ impl AuthService {
 
                 web_sys::console::log_1(&"Session saved successfully".into());
 
-                // URL 정리 - 해시 제거하고 홈으로
-                location.set_href("/quiz-note/").unwrap();
+                // URL 정리 - 현재 origin과 pathname 사용
+                let origin = location.origin().unwrap();
+                let pathname = location.pathname().unwrap();
+                location
+                    .set_href(&format!("{}{}", origin, pathname))
+                    .unwrap();
             } else {
                 return Err("토큰을 찾을 수 없습니다".to_string());
             }
