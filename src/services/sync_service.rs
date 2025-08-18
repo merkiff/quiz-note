@@ -1,4 +1,4 @@
-use crate::services::SupabaseClient;
+use crate::services::{AuthService, SupabaseClient};
 use crate::storage::{load_from_storage, save_to_storage, CERTIFICATES_KEY, QUESTIONS_KEY};
 use std::collections::HashMap;
 
@@ -43,6 +43,21 @@ impl SyncService {
 
     // 양방향 동기화
     pub async fn sync() -> Result<(), String> {
+        // 첫 시도
+        match Self::sync_internal().await {
+            Ok(_) => Ok(()),
+            Err(e) if e.contains("만료") || e.contains("401") => {
+                // 토큰 갱신 후 재시도
+                web_sys::console::log_1(&"Sync failed, refreshing token...".into());
+                AuthService::refresh_token().await?;
+                Self::sync_internal().await
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    async fn sync_internal() -> Result<(), String> {
+        // 기존 sync 로직
         Self::push_to_cloud().await?;
         Self::pull_from_cloud().await?;
         Ok(())

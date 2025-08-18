@@ -12,56 +12,63 @@ impl SupabaseClient {
         Self {} // 빈 구조체 반환
     }
 
-    // 인증된 요청을 위한 헤더 생성
-    fn get_auth_header(&self) -> Option<String> {
-        AuthService::get_session().map(|session| format!("Bearer {}", session.access_token))
-    }
+    async fn get_auth_header(&self) -> Result<String, String> {
+        // 토큰 만료 확인
+        if AuthService::is_token_expired() {
+            web_sys::console::log_1(&"Token expired, refreshing...".into());
+            AuthService::refresh_token().await?;
+        }
 
+        AuthService::get_session()
+            .map(|session| format!("Bearer {}", session.access_token))
+            .ok_or("로그인이 필요합니다".to_string())
+    }
     // 자격증 동기화 (클라우드로 업로드)
     pub async fn sync_certificates_to_cloud(
-    &self,
-    certificates: &std::collections::HashMap<String, crate::models::Certificate>,
-) -> Result<(), String> {
-    // 인증 확인
-    let auth_header = self.get_auth_header()
-        .ok_or("로그인이 필요합니다".to_string())?;
+        &self,
+        certificates: &std::collections::HashMap<String, crate::models::Certificate>,
+    ) -> Result<(), String> {
+        // 인증 확인
+        let auth_header = self
+            .get_auth_header().await?;
+            //("로그인이 필요합니다".to_string())?;
 
-    if !certificates.is_empty() {
-        let url = format!("{}/rest/v1/certificates", SUPABASE_CONFIG.url);
-        
-        let records: Vec<serde_json::Value> = certificates
-            .values()
-            .map(|cert| {
-                json!({
-                    "id": cert.id,
-                    "name": cert.name,
-                    "description": cert.description,
-                    "question_count": cert.question_count,
-                    "created_at": cert.created_at.to_rfc3339(),
+        if !certificates.is_empty() {
+            let url = format!("{}/rest/v1/certificates", SUPABASE_CONFIG.url);
+
+            let records: Vec<serde_json::Value> = certificates
+                .values()
+                .map(|cert| {
+                    json!({
+                        "id": cert.id,
+                        "name": cert.name,
+                        "description": cert.description,
+                        "question_count": cert.question_count,
+                        "created_at": cert.created_at.to_rfc3339(),
+                    })
                 })
-            })
-            .collect();
+                .collect();
 
-        // UPSERT 사용 (있으면 업데이트, 없으면 삽입)
-        let response = Request::post(&url)
-            .header("apikey", SUPABASE_CONFIG.anon_key)
-            .header("Authorization", &auth_header)
-            .header("Content-Type", "application/json")
-            .header("Prefer", "resolution=merge-duplicates")  // UPSERT 설정
-            .json(&records)
-            .map_err(|e| format!("요청 생성 실패: {}", e))?
-            .send()
-            .await
-            .map_err(|e| format!("요청 실패: {}", e))?;
+            // UPSERT 사용 (있으면 업데이트, 없으면 삽입)
+            let response = Request::post(&url)
+                .header("apikey", SUPABASE_CONFIG.anon_key)
+                .header("Authorization", &auth_header)
+                .header("Content-Type", "application/json")
+                .header("Prefer", "resolution=merge-duplicates") // UPSERT 설정
+                .json(&records)
+                .map_err(|e| format!("요청 생성 실패: {}", e))?
+                .send()
+                .await
+                .map_err(|e| format!("요청 실패: {}", e))?;
 
-        if !response.ok() {
-            let error_text = response.text().await.unwrap_or_default();
-            return Err(format!("자격증 동기화 실패: {}", error_text));
+            if !response.ok() {
+                let error_text = response.text().await.unwrap_or_default();
+                return Err(format!("자격증 동기화 실패: {}", error_text));
+            }
         }
-    }
 
-    Ok(())
-}
+        Ok(())
+    }
 
     // 자격증 클라우드에서 가져오기
     pub async fn sync_certificates_from_cloud(
@@ -69,8 +76,8 @@ impl SupabaseClient {
     ) -> Result<std::collections::HashMap<String, crate::models::Certificate>, String> {
         // 인증 확인
         let auth_header = self
-            .get_auth_header()
-            .ok_or("로그인이 필요합니다".to_string())?;
+            .get_auth_header().await?;
+            //.ok_or("로그인이 필요합니다".to_string())?;
 
         let url = format!("{}/rest/v1/certificates", SUPABASE_CONFIG.url);
 
@@ -120,46 +127,100 @@ impl SupabaseClient {
 
     // 문제 동기화 (TODO: 구현 필요)
     pub async fn sync_questions_to_cloud(
-    &self,
-    questions: &std::collections::HashMap<String, crate::models::Question>,
-) -> Result<(), String> {
-    // 인증 확인
-    let auth_header = self.get_auth_header()
-        .ok_or("로그인이 필요합니다".to_string())?;
+        &self,
+        questions: &std::collections::HashMap<String, crate::models::Question>,
+    ) -> Result<(), String> {
+        // 인증 확인
+        let auth_header = self
+            .get_auth_header().await?;
+            //.ok_or("로그인이 필요합니다".to_string())?;
 
-    // 먼저 이 사용자의 모든 보기 삭제 (CASCADE로 인해 문제 삭제 시 자동 삭제되지만 명시적으로)
-    let delete_options_url = format!("{}/rest/v1/question_options", SUPABASE_CONFIG.url);
-    let _ = Request::delete(&delete_options_url)
-        .header("apikey", SUPABASE_CONFIG.anon_key)
-        .header("Authorization", &auth_header)
-        .send()
-        .await;
+        // 먼저 이 사용자의 모든 보기 삭제 (CASCADE로 인해 문제 삭제 시 자동 삭제되지만 명시적으로)
+        let delete_options_url = format!("{}/rest/v1/question_options", SUPABASE_CONFIG.url);
+        let _ = Request::delete(&delete_options_url)
+            .header("apikey", SUPABASE_CONFIG.anon_key)
+            .header("Authorization", &auth_header)
+            .send()
+            .await;
 
-    if !questions.is_empty() {
-        let url = format!("{}/rest/v1/questions", SUPABASE_CONFIG.url);
-        
-        let records: Vec<serde_json::Value> = questions
-            .values()
-            .map(|q| {
+        if !questions.is_empty() {
+            let url = format!("{}/rest/v1/questions", SUPABASE_CONFIG.url);
+
+            let records: Vec<serde_json::Value> = questions
+                .values()
+                .map(|q| {
+                    json!({
+                        "id": q.id,
+                        "certificate_id": q.certificate_id,
+                        "content": q.content,
+                        "explanation": q.explanation,
+                        "attempt_count": q.attempt_count,
+                        "correct_count": q.correct_count,
+                        "created_at": q.created_at.to_rfc3339(),
+                        "last_attempt": q.last_attempt.map(|dt| dt.to_rfc3339()),
+                    })
+                })
+                .collect();
+
+            // UPSERT 사용
+            let response = Request::post(&url)
+                .header("apikey", SUPABASE_CONFIG.anon_key)
+                .header("Authorization", &auth_header)
+                .header("Content-Type", "application/json")
+                .header("Prefer", "resolution=merge-duplicates") // UPSERT 설정
+                .json(&records)
+                .map_err(|e| format!("요청 생성 실패: {}", e))?
+                .send()
+                .await
+                .map_err(|e| format!("요청 실패: {}", e))?;
+
+            if !response.ok() {
+                let error_text = response.text().await.unwrap_or_default();
+                return Err(format!("문제 동기화 실패: {}", error_text));
+            }
+
+            // 보기(options)도 동기화
+            for question in questions.values() {
+                self.sync_options_for_question(&question.id, &question.options)
+                    .await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    // 보기 동기화
+    async fn sync_options_for_question(
+        &self,
+        question_id: &str,
+        options: &[crate::models::QuestionOption],
+    ) -> Result<(), String> {
+        let auth_header = self
+            .get_auth_header().await?;
+            //.ok_or("로그인이 필요합니다".to_string())?;
+
+        let url = format!("{}/rest/v1/question_options", SUPABASE_CONFIG.url);
+
+        let records: Vec<serde_json::Value> = options
+            .iter()
+            .enumerate()
+            .map(|(idx, opt)| {
                 json!({
-                    "id": q.id,
-                    "certificate_id": q.certificate_id,
-                    "content": q.content,
-                    "explanation": q.explanation,
-                    "attempt_count": q.attempt_count,
-                    "correct_count": q.correct_count,
-                    "created_at": q.created_at.to_rfc3339(),
-                    "last_attempt": q.last_attempt.map(|dt| dt.to_rfc3339()),
+                    "id": opt.id,
+                    "question_id": question_id,
+                    "content": opt.content,
+                    "is_correct": opt.is_correct,
+                    "explanation": opt.explanation,
+                    "display_order": idx,
                 })
             })
             .collect();
 
-        // UPSERT 사용
         let response = Request::post(&url)
             .header("apikey", SUPABASE_CONFIG.anon_key)
             .header("Authorization", &auth_header)
             .header("Content-Type", "application/json")
-            .header("Prefer", "resolution=merge-duplicates")  // UPSERT 설정
+            .header("Prefer", "resolution=merge-duplicates") // UPSERT 설정
             .json(&records)
             .map_err(|e| format!("요청 생성 실패: {}", e))?
             .send()
@@ -168,71 +229,19 @@ impl SupabaseClient {
 
         if !response.ok() {
             let error_text = response.text().await.unwrap_or_default();
-            return Err(format!("문제 동기화 실패: {}", error_text));
+            return Err(format!("보기 동기화 실패: {}", error_text));
         }
 
-        // 보기(options)도 동기화
-        for question in questions.values() {
-            self.sync_options_for_question(&question.id, &question.options).await?;
-        }
+        Ok(())
     }
-
-    Ok(())
-}
-
-// 보기 동기화
-async fn sync_options_for_question(
-    &self,
-    question_id: &str,
-    options: &[crate::models::QuestionOption],
-) -> Result<(), String> {
-    let auth_header = self.get_auth_header()
-        .ok_or("로그인이 필요합니다".to_string())?;
-
-    let url = format!("{}/rest/v1/question_options", SUPABASE_CONFIG.url);
-    
-    let records: Vec<serde_json::Value> = options
-        .iter()
-        .enumerate()
-        .map(|(idx, opt)| {
-            json!({
-                "id": opt.id,
-                "question_id": question_id,
-                "content": opt.content,
-                "is_correct": opt.is_correct,
-                "explanation": opt.explanation,
-                "display_order": idx,
-            })
-        })
-        .collect();
-
-    let response = Request::post(&url)
-        .header("apikey", SUPABASE_CONFIG.anon_key)
-        .header("Authorization", &auth_header)
-        .header("Content-Type", "application/json")
-        .header("Prefer", "resolution=merge-duplicates")  // UPSERT 설정
-        .json(&records)
-        .map_err(|e| format!("요청 생성 실패: {}", e))?
-        .send()
-        .await
-        .map_err(|e| format!("요청 실패: {}", e))?;
-
-    if !response.ok() {
-        let error_text = response.text().await.unwrap_or_default();
-        return Err(format!("보기 동기화 실패: {}", error_text));
-    }
-
-    Ok(())
-}
-
 
     // 문제 클라우드에서 가져오기
     pub async fn sync_questions_from_cloud(
         &self,
     ) -> Result<std::collections::HashMap<String, crate::models::Question>, String> {
         let auth_header = self
-            .get_auth_header()
-            .ok_or("로그인이 필요합니다".to_string())?;
+            .get_auth_header().await?;
+            //.ok_or("로그인이 필요합니다".to_string())?;
 
         let url = format!("{}/rest/v1/questions", SUPABASE_CONFIG.url);
 
@@ -300,8 +309,8 @@ async fn sync_options_for_question(
         question_id: &str,
     ) -> Result<Vec<crate::models::QuestionOption>, String> {
         let auth_header = self
-            .get_auth_header()
-            .ok_or("로그인이 필요합니다".to_string())?;
+            .get_auth_header().await?;
+            //.ok_or("로그인이 필요합니다".to_string())?;
 
         let url = format!(
             "{}/rest/v1/question_options?question_id=eq.{}&order=display_order",

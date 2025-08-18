@@ -3,6 +3,7 @@ use gloo::storage::{LocalStorage, Storage};
 use gloo_net::http::Request;
 use serde::{Deserialize, Serialize};
 use web_sys::window;
+use base64::{Engine as _, engine::general_purpose};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
@@ -31,7 +32,7 @@ impl AuthService {
         let redirect_url = if window().unwrap().location().hostname().unwrap() == "localhost" {
             "http://localhost:8080/"
         } else {
-            "https://merkiff.github.io/quiz-note/"
+            "https://merkiff-벼ㅑquiz-note/"
         };
 
         web_sys::console::log_1(&format!("Email redirect URL: {}", redirect_url).into());
@@ -183,4 +184,75 @@ impl AuthService {
             email: user_data["email"].as_str().unwrap_or_default().to_string(),
         })
     }
+
+    // 토큰 갱신
+    pub async fn refresh_token() -> Result<(), String> {
+        let session = Self::get_session().ok_or("세션이 없습니다")?;
+
+        let url = format!(
+            "{}/auth/v1/token?grant_type=refresh_token",
+            SUPABASE_CONFIG.url
+        );
+
+        let body = serde_json::json!({
+            "refresh_token": session.refresh_token
+        });
+
+        let response = Request::post(&url)
+            .header("apikey", SUPABASE_CONFIG.anon_key)
+            .header("Content-Type", "application/json")
+            .json(&body)
+            .map_err(|e| e.to_string())?
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if response.ok() {
+            let auth_response: serde_json::Value =
+                response.json().await.map_err(|e| e.to_string())?;
+
+            if let (Some(access_token), Some(refresh_token)) = (
+                auth_response["access_token"].as_str(),
+                auth_response["refresh_token"].as_str(),
+            ) {
+                // 새 토큰으로 세션 업데이트
+                let mut updated_session = session;
+                updated_session.access_token = access_token.to_string();
+                updated_session.refresh_token = refresh_token.to_string();
+
+                Self::save_session(updated_session);
+                Ok(())
+            } else {
+                Err("토큰 갱신 응답 처리 실패".to_string())
+            }
+        } else {
+            // Refresh token도 만료된 경우
+            LocalStorage::delete(Self::SESSION_KEY);
+            Err("세션이 만료되었습니다. 다시 로그인해주세요.".to_string())
+        }
+    }
+
+
+        // 토큰 유효성 검사
+    pub fn is_token_expired() -> bool {
+        if let Some(session) = Self::get_session() {
+            // JWT 디코딩 (간단한 방법)
+            let parts: Vec<&str> = session.access_token.split('.').collect();
+            if parts.len() == 3 {
+                // Base64 디코딩하여 만료 시간 확인
+                if let Ok(payload) = general_purpose::URL_SAFE_NO_PAD.decode(parts[1]) {
+                    if let Ok(json) = String::from_utf8(payload) {
+                        if let Ok(claims) = serde_json::from_str::<serde_json::Value>(&json) {
+                            if let Some(exp) = claims["exp"].as_i64() {
+                                let now = js_sys::Date::now() / 1000.0;
+                                return now as i64 > exp;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        false
+    }
 }
+
