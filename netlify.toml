@@ -1,0 +1,15 @@
+[build]
+  # 빌드 명령어
+  command = "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && source $HOME/.cargo/env && rustup target add wasm32-unknown-unknown && cargo install trunk && trunk build --release"
+  
+  # 배포할 디렉토리
+  publish = "dist"
+
+[build.environment]
+  # Rust 버전 고정 (선택사항)
+  RUST_VERSION = "stable"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
