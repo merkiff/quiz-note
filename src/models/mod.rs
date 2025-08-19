@@ -7,6 +7,7 @@ pub struct Question {
     pub id: String,
     pub certificate_id: String,
     pub content: String,
+    #[serde(rename = "question_options")] 
     pub options: Vec<QuestionOption>,  // Option을 QuestionOption으로 변경
     pub explanation: String,
     pub created_at: DateTime<Utc>,
@@ -16,11 +17,13 @@ pub struct Question {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct QuestionOption {  // Option을 QuestionOption으로 변경
+pub struct QuestionOption {
     pub id: String,
     pub content: String,
     pub is_correct: bool,
     pub explanation: String,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub display_order: i32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -55,6 +58,7 @@ impl QuestionOption {  // Option을 QuestionOption으로 변경
             content,
             is_correct,
             explanation: String::new(),
+            display_order: 0, //필드 초기화
         }
     }
 }
@@ -69,4 +73,13 @@ impl Certificate {
             created_at: Utc::now(),
         }
     }
+}
+
+fn is_zero(num: &i32) -> bool {
+    *num == 0
+}
+
+// `skip_serializing_if` 속성이 이 함수를 사용합니다.
+fn is_default<T: Default + PartialEq>(t: &T) -> bool {
+    *t == T::default()
 }

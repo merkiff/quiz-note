@@ -1,9 +1,10 @@
 use crate::models::{Certificate, Question, QuestionOption};
 use crate::routes::Route;
 use crate::services::{CertificateService, QuestionService};
-use web_sys::{HtmlInputElement, HtmlTextAreaElement};
+use web_sys::{HtmlInputElement, HtmlSelectElement, HtmlTextAreaElement};
 use yew::prelude::*;
 use yew_router::prelude::*;
+use wasm_bindgen_futures::spawn_local;
 
 #[function_component(QuestionForm)]
 pub fn question_form() -> Html {
@@ -21,24 +22,29 @@ pub fn question_form() -> Html {
         ]
     });
     let error = use_state(|| None::<String>);
+    let is_loading = use_state(|| true); // 자격증 로딩을 위해 true로 시작
 
-    // 자격증 목록 로드
     {
         let certificates = certificates.clone();
+        let error = error.clone();
+        let is_loading = is_loading.clone();
         use_effect_with((), move |_| {
-            if let Ok(certs) = CertificateService::get_all() {
-                certificates.set(certs);
-            }
+            spawn_local(async move {
+                match CertificateService::get_all().await {
+                    Ok(certs) => certificates.set(certs),
+                    Err(e) => error.set(Some(e)),
+                }
+                is_loading.set(false); // 로딩 완료
+            });
+            || ()
         });
     }
 
     let on_certificate_change = {
         let selected_certificate = selected_certificate.clone();
         Callback::from(move |e: Event| {
-            let input = e.target_dyn_into::<HtmlInputElement>();
-            if let Some(input) = input {
-                selected_certificate.set(input.value());
-            }
+            let value = e.target_dyn_into::<HtmlSelectElement>().unwrap().value();
+            selected_certificate.set(value);
         })
     };
 
@@ -118,32 +124,23 @@ pub fn question_form() -> Html {
         let explanation = explanation.clone();
         let options = options.clone();
         let error = error.clone();
+        let is_loading = is_loading.clone();
 
         Callback::from(move |e: SubmitEvent| {
             e.prevent_default();
+            error.set(None);
 
-            // 디버깅: 현재 선택된 값 확인
-            web_sys::console::log_1(
-                &format!("Selected certificate value: '{:?}'", &selected_certificate).into(),
-            );
-            web_sys::console::log_1(
-                &format!("Is empty: {}", selected_certificate.is_empty()).into(),
-            );
-            web_sys::console::log_1(&format!("Length: {}", selected_certificate.len()).into());
-            if selected_certificate.trim().is_empty() {
+            if selected_certificate.is_empty() {
                 error.set(Some("자격증을 선택해주세요.".to_string()));
                 return;
             }
-
             if question_content.trim().is_empty() {
                 error.set(Some("문제를 입력해주세요.".to_string()));
                 return;
             }
 
-            let mut question =
-                Question::new((*selected_certificate).clone(), (*question_content).clone());
+            let mut question = Question::new((*selected_certificate).clone(), (*question_content).clone());
             question.explanation = (*explanation).clone();
-
             for (content, is_correct, expl) in (*options).iter() {
                 if !content.trim().is_empty() {
                     let mut option = QuestionOption::new(content.clone(), *is_correct);
@@ -151,13 +148,28 @@ pub fn question_form() -> Html {
                     question.options.push(option);
                 }
             }
-
-            match QuestionService::create(question) {
-                Ok(_) => {
-                    navigator.push(&Route::Certificates);
-                }
-                Err(e) => error.set(Some(e)),
+            
+            // 유효성 검사 추가
+            if question.options.iter().filter(|o| !o.content.trim().is_empty()).count() < 2 {
+                 error.set(Some("최소 2개 이상의 보기를 입력해주세요.".to_string()));
+                 return;
             }
+             if !question.options.iter().any(|o| o.is_correct) {
+                 error.set(Some("정답을 선택해주세요.".to_string()));
+                 return;
+            }
+
+            let navigator = navigator.clone();
+            let error = error.clone();
+            let is_loading = is_loading.clone();
+            spawn_local(async move {
+                is_loading.set(true);
+                match QuestionService::create(question).await {
+                    Ok(_) => navigator.push(&Route::Certificates),
+                    Err(e) => error.set(Some(e)),
+                }
+                is_loading.set(false);
+            });
         })
     };
 
@@ -166,34 +178,20 @@ pub fn question_form() -> Html {
             <h2 class="text-2xl font-bold text-gray-900 mb-6">{"새 문제 작성"}</h2>
 
             <form onsubmit={on_submit} class="space-y-6">
-                // 자격증 선택
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">
-                        {"자격증 선택"}
-                    </label>
-                    <div class="space-y-2">
-                        {for certificates.iter().map(|cert| {
-                            let cert_id = cert.id.clone();
-                            let selected_certificate = selected_certificate.clone();
-                            let is_checked = &cert.id == &*selected_certificate;
-
-                            html! {
-                                <label class="flex items-center p-2 border rounded cursor-pointer hover:bg-gray-50">
-                                    <input
-                                        type="radio"
-                                        name="certificate"
-                                        value={cert.id.clone()}
-                                        checked={is_checked}
-                                        onchange={move |_| selected_certificate.set(cert_id.clone())}
-                                        class="mr-2"
-                                    />
-                                    <span>{&cert.name}</span>
-                                </label>
-                            }
+                 <div>
+                    <label for="certificate-select" class="block text-sm font-medium text-gray-700">{"자격증 선택"}</label>
+                    <select
+                        id="certificate-select"
+                        class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md border"
+                        onchange={on_certificate_change}
+                        disabled={*is_loading}
+                    >
+                        <option value="" selected={selected_certificate.is_empty()}>{"자격증을 선택하세요"}</option>
+                        { for certificates.iter().map(|cert| {
+                            html! { <option value={cert.id.clone()} selected={*selected_certificate == cert.id}>{&cert.name}</option> }
                         })}
-                    </div>
+                    </select>
                 </div>
-
                 <div>
                     <label class="block text-sm font-medium text-gray-700">
                         {"문제"}
@@ -204,6 +202,7 @@ pub fn question_form() -> Html {
                         rows="3"
                         class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2 border"
                         placeholder="문제를 입력하세요"
+                        disabled={*is_loading}
                     />
                 </div>
 
@@ -216,6 +215,7 @@ pub fn question_form() -> Html {
                             type="button"
                             onclick={add_option}
                             class="text-sm text-blue-600 hover:text-blue-900"
+                            disabled={*is_loading}
                         >
                             {"+ 보기 추가"}
                         </button>
@@ -239,6 +239,7 @@ pub fn question_form() -> Html {
                                             checked={*is_correct}
                                             onchange={move |_| on_correct_change.emit(idx)}
                                             class="mt-1"
+                                            disabled={*is_loading}
                                         />
                                         <div class="flex-1">
                                             <input
@@ -250,6 +251,7 @@ pub fn question_form() -> Html {
                                                 }}
                                                 placeholder={format!("보기 {}", idx + 1)}
                                                 class="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2 border"
+                                                disabled={*is_loading}
                                             />
                                             <textarea
                                                 value={expl_value}
@@ -260,6 +262,7 @@ pub fn question_form() -> Html {
                                                 placeholder="이 보기에 대한 해설 (선택사항)"
                                                 rows="2"
                                                 class="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2 border"
+                                                disabled={*is_loading}
                                             />
                                         </div>
                                         {if options.len() > 2 {
@@ -267,7 +270,8 @@ pub fn question_form() -> Html {
                                                 <button
                                                     type="button"
                                                     onclick={move |_| remove_option.emit(idx)}
-                                                    class="text-red-600 hover:text-red-900"
+                                                    class="text-red-600 hover:text-red-900 disabled:opacity-50"
+                                                    disabled={*is_loading}
                                                 >
                                                     {"삭제"}
                                                 </button>
@@ -292,10 +296,11 @@ pub fn question_form() -> Html {
                         rows="3"
                         class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2 border"
                         placeholder="문제에 대한 전체 해설을 입력하세요"
+                        disabled={*is_loading}
                     />
                 </div>
 
-                {if let Some(err) = (*error).clone() {
+                {if let Some(err) = &*error {
                     html! {
                         <div class="text-red-600 text-sm">
                             {err}
@@ -316,9 +321,10 @@ pub fn question_form() -> Html {
                     </Link<Route>>
                     <button
                         type="submit"
-                        class="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+                        class="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
+                        disabled={*is_loading}
                     >
-                        {"문제 저장"}
+                        { if *is_loading { "저장 중..." } else { "문제 저장" } }
                     </button>
                 </div>
             </form>

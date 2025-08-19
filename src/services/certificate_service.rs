@@ -1,61 +1,29 @@
 use crate::models::Certificate;
-use crate::storage::{load_from_storage, save_to_storage, CERTIFICATES_KEY};
-use std::collections::HashMap;
+use crate::services::SupabaseClient;
 
 pub struct CertificateService;
 
 impl CertificateService {
-    pub fn get_all() -> Result<Vec<Certificate>, String> {
-        let certificates: HashMap<String, Certificate> = 
-            load_from_storage(CERTIFICATES_KEY).unwrap_or_default();
-        
-        let mut certs: Vec<Certificate> = certificates.into_values().collect();
+    pub async fn get_all() -> Result<Vec<Certificate>, String> {
+        let client = SupabaseClient::new();
+        let mut certs = client.get_all_certificates().await?;
+        // 최신순으로 정렬
         certs.sort_by(|a, b| b.created_at.cmp(&a.created_at));
-        
         Ok(certs)
     }
 
-    pub fn get_by_id(id: &str) -> Result<Certificate, String> {
-        let certificates: HashMap<String, Certificate> = 
-            load_from_storage(CERTIFICATES_KEY).unwrap_or_default();
-        
-        certificates.get(id)
-            .cloned()
-            .ok_or_else(|| "자격증을 찾을 수 없습니다.".to_string())
-    }
-
-    pub fn create(name: String, description: String) -> Result<Certificate, String> {
-        let mut certificates: HashMap<String, Certificate> = 
-            load_from_storage(CERTIFICATES_KEY).unwrap_or_default();
-        
+    pub async fn create(name: String, description: String) -> Result<Certificate, String> {
+        let client = SupabaseClient::new();
         let certificate = Certificate::new(name, description);
-        certificates.insert(certificate.id.clone(), certificate.clone());
-        
-        save_to_storage(CERTIFICATES_KEY, &certificates)?;
+        client.create_certificate(&certificate).await?;
         Ok(certificate)
     }
 
-    pub fn update(id: &str, name: String, description: String) -> Result<Certificate, String> {
-        let mut certificates: HashMap<String, Certificate> = 
-            load_from_storage(CERTIFICATES_KEY).unwrap_or_default();
-        
-        let certificate = certificates.get_mut(id)
-            .ok_or_else(|| "자격증을 찾을 수 없습니다.".to_string())?;
-        
-        certificate.name = name;
-        certificate.description = description;
-        let updated = certificate.clone();
-        
-        save_to_storage(CERTIFICATES_KEY, &certificates)?;
-        Ok(updated)
+    pub async fn delete(id: &str) -> Result<(), String> {
+        let client = SupabaseClient::new();
+        client.delete_certificate(id).await
     }
-
-    pub fn delete(id: &str) -> Result<(), String> {
-        let mut certificates: HashMap<String, Certificate> = 
-            load_from_storage(CERTIFICATES_KEY).unwrap_or_default();
-        
-        certificates.remove(id);
-        save_to_storage(CERTIFICATES_KEY, &certificates)?;
-        Ok(())
-    }
+    
+    // get_by_id, update는 현재 앱에서 직접 사용하지 않으므로 단순화를 위해 삭제합니다.
+    // 필요하다면 위와 같은 방식으로 추가할 수 있습니다.
 }

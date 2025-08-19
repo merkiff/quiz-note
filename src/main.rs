@@ -3,7 +3,7 @@ mod config;
 mod models;
 mod routes;
 mod services;
-mod storage;
+// mod storage; // 이 줄을 삭제합니다.
 
 use routes::{switch, Route};
 use services::AuthService;
@@ -42,6 +42,7 @@ fn app() -> Html {
                     force_render.force_update();
                 }
             });
+            || ()
         });
     }
 
@@ -57,7 +58,7 @@ fn app() -> Html {
     let current_user = AuthService::get_current_user();
 
     html! {
-        <HashRouter>  // BrowserRouter를 HashRouter로 변경!
+        <HashRouter>
             <div class="min-h-screen bg-gray-50">
                 {if is_authenticated {
                     html! {

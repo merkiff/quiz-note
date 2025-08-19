@@ -1,5 +1,6 @@
 use yew::prelude::*;
 use yew_router::prelude::*;
+use wasm_bindgen_futures::spawn_local;
 use crate::models::Certificate;
 use crate::routes::Route;
 use crate::services::CertificateService;
@@ -14,27 +15,61 @@ pub struct CertificateDetailProps {
 pub fn certificate_detail(props: &CertificateDetailProps) -> Html {
     let certificate = use_state(|| None::<Certificate>);
     let navigator = use_navigator().unwrap();
+    let error = use_state(|| None::<String>);
+    let is_loading = use_state(|| true);
 
     {
         let certificate = certificate.clone();
+        let error = error.clone();
+        let is_loading = is_loading.clone();
         let id = props.id.clone();
         use_effect_with(id, move |id| {
-            match CertificateService::get_by_id(id) {
-                Ok(cert) => certificate.set(Some(cert)),
-                Err(_) => certificate.set(None),
-            }
+            let id = id.clone();
+            spawn_local(async move {
+                is_loading.set(true);
+                match CertificateService::get_all().await {
+                    Ok(certs) => {
+                        if let Some(cert) = certs.into_iter().find(|c| c.id == id) {
+                            certificate.set(Some(cert));
+                        } else {
+                            error.set(Some("해당 자격증을 찾을 수 없습니다.".to_string()));
+                        }
+                    },
+                    Err(e) => error.set(Some(e)),
+                }
+                is_loading.set(false);
+            });
+            || ()
         });
     }
 
     let on_delete = {
         let id = props.id.clone();
         let navigator = navigator.clone();
+        let error = error.clone();
         Callback::from(move |_| {
-            if let Ok(_) = CertificateService::delete(&id) {
-                navigator.push(&Route::Certificates);
+            if web_sys::window().unwrap().confirm_with_message("정말로 이 자격증과 관련된 모든 문제를 삭제하시겠습니까?").unwrap_or(false) {
+                let id = id.clone();
+                let navigator = navigator.clone();
+                let error = error.clone();
+                spawn_local(async move {
+                    if let Err(e) = CertificateService::delete(&id).await {
+                        error.set(Some(e));
+                    } else {
+                        navigator.push(&Route::Certificates);
+                    }
+                });
             }
         })
     };
+
+    if *is_loading {
+        return html!{ <div class="text-center py-12 text-gray-500">{"정보를 불러오는 중..."}</div> }
+    }
+
+    if let Some(err) = &*error {
+        return html! { <div class="text-red-600 text-center py-12">{format!("오류: {}", err)}</div> }
+    }
 
     match &*certificate {
         Some(cert) => html! {
@@ -79,7 +114,7 @@ pub fn certificate_detail(props: &CertificateDetailProps) -> Html {
                                 {"문제 추가"}
                             </button>
                         </Link<Route>>
-                        <button 
+                        <button
                             onclick={on_delete}
                             class="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
                         >
@@ -88,7 +123,6 @@ pub fn certificate_detail(props: &CertificateDetailProps) -> Html {
                     </div>
                 </div>
 
-                // 문제 목록 추가
                 <div class="bg-white shadow sm:rounded-lg p-6">
                     <QuestionList certificate_id={cert.id.clone()} />
                 </div>
