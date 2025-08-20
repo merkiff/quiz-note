@@ -7,10 +7,11 @@ pub struct Question {
     pub id: String,
     pub certificate_id: String,
     pub content: String,
-    #[serde(rename = "question_options")] 
+    #[serde(rename = "question_options", skip_serializing, default)] 
     pub options: Vec<QuestionOption>,  // Option을 QuestionOption으로 변경
     pub explanation: String,
     pub created_at: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_attempt: Option<DateTime<Utc>>,  // 여기는 표준 Option 사용
     pub attempt_count: u32,
     pub correct_count: u32,
