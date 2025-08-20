@@ -23,7 +23,7 @@ pub struct QuestionOption {
     pub content: String,
     pub is_correct: bool,
     pub explanation: String,
-    #[serde(default, skip_serializing_if = "is_zero")]
+    #[serde(default)]
     pub display_order: i32,
 }
 
@@ -76,9 +76,6 @@ impl Certificate {
     }
 }
 
-fn is_zero(num: &i32) -> bool {
-    *num == 0
-}
 
 // `skip_serializing_if` 속성이 이 함수를 사용합니다.
 fn is_default<T: Default + PartialEq>(t: &T) -> bool {
