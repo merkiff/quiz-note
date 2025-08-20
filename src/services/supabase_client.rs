@@ -79,7 +79,6 @@ impl SupabaseClient {
 
     pub async fn get_questions_by_certificate(&self, cert_id: &str) -> Result<Vec<Question>, String> {
         let auth_header = self.get_auth_header().await?;
-        // 한번의 요청으로 문제와 관련 보기들을 함께 가져옵니다.
         let url = format!(
             "{}/rest/v1/questions?certificate_id=eq.{}&select=*,question_options(*)",
             SUPABASE_CONFIG.url, cert_id
@@ -92,7 +91,6 @@ impl SupabaseClient {
 
         if response.ok() {
             let mut questions: Vec<Question> = response.json().await.map_err(|e| e.to_string())?;
-            // 보기들을 display_order 순서로 정렬
             for q in questions.iter_mut() {
                 q.options.sort_by_key(|opt| opt.display_order);
             }
@@ -118,28 +116,34 @@ impl SupabaseClient {
             return Err(format!("문제 생성 실패: {}", q_res.text().await.unwrap_or_default()));
         }
 
-        // 2. 보기들 생성
+        // 2. 보기들 생성 (핵심 수정 지점)
         if !question.options.is_empty() {
+            // question_id를 각 보기에 할당
+            let options_with_id: Vec<QuestionOption> = question.options.iter().map(|opt| {
+                let mut new_opt = opt.clone();
+                new_opt.question_id = question.id.clone();
+                new_opt
+            }).collect();
+
             let opt_url = format!("{}/rest/v1/question_options", SUPABASE_CONFIG.url);
             let opt_res = Request::post(&opt_url)
                 .header("apikey", SUPABASE_CONFIG.anon_key)
                 .header("Authorization", &auth_header)
                 .header("Content-Type", "application/json")
-                .json(&question.options).map_err(|e| e.to_string())?
+                .json(&options_with_id).map_err(|e| e.to_string())?
                 .send().await.map_err(|e| e.to_string())?;
 
             if !opt_res.ok() {
-                // 여기서 실패하면 방금 만든 문제를 삭제해주는 것이 좋지만, 일단 오류 메시지만 반환
                 return Err(format!("보기 생성 실패: {}", opt_res.text().await.unwrap_or_default()));
             }
         }
         Ok(())
     }
-    
+
     pub async fn update_question_stats(&self, question: &Question) -> Result<(), String> {
         let auth_header = self.get_auth_header().await?;
         let url = format!("{}/rest/v1/questions?id=eq.{}", SUPABASE_CONFIG.url, question.id);
-        
+
         let body = json!({
             "attempt_count": question.attempt_count,
             "correct_count": question.correct_count,
@@ -152,7 +156,7 @@ impl SupabaseClient {
             .header("Content-Type", "application/json")
             .json(&body).map_err(|e| e.to_string())?
             .send().await.map_err(|e| e.to_string())?;
-        
+
         if response.ok() {
             Ok(())
         } else {

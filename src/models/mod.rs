@@ -7,12 +7,12 @@ pub struct Question {
     pub id: String,
     pub certificate_id: String,
     pub content: String,
-    #[serde(rename = "question_options", skip_serializing, default)] 
-    pub options: Vec<QuestionOption>,  // Option을 QuestionOption으로 변경
+    #[serde(rename = "question_options", skip_serializing, default)]
+    pub options: Vec<QuestionOption>,
     pub explanation: String,
     pub created_at: DateTime<Utc>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_attempt: Option<DateTime<Utc>>,  // 여기는 표준 Option 사용
+    pub last_attempt: Option<DateTime<Utc>>,
     pub attempt_count: u32,
     pub correct_count: u32,
 }
@@ -20,6 +20,9 @@ pub struct Question {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct QuestionOption {
     pub id: String,
+    // 이 필드를 추가합니다.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub question_id: String,
     pub content: String,
     pub is_correct: bool,
     pub explanation: String,
@@ -52,14 +55,15 @@ impl Question {
     }
 }
 
-impl QuestionOption {  // Option을 QuestionOption으로 변경
+impl QuestionOption {
     pub fn new(content: String, is_correct: bool) -> Self {
         Self {
             id: Uuid::new_v4().to_string(),
+            question_id: String::new(), // 필드를 초기화합니다.
             content,
             is_correct,
             explanation: String::new(),
-            display_order: 0, //필드 초기화
+            display_order: 0,
         }
     }
 }
@@ -76,8 +80,11 @@ impl Certificate {
     }
 }
 
+// 이 함수는 더 이상 사용되지 않으므로 삭제하거나 주석 처리합니다.
+// fn is_zero(num: &i32) -> bool {
+//     *num == 0
+// }
 
-// `skip_serializing_if` 속성이 이 함수를 사용합니다.
 fn is_default<T: Default + PartialEq>(t: &T) -> bool {
     *t == T::default()
 }
