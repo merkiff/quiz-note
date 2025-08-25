@@ -3,7 +3,6 @@ mod config;
 mod models;
 mod routes;
 mod services;
-// mod storage; // 이 줄을 삭제합니다.
 
 use routes::{switch, Route};
 use services::AuthService;
@@ -26,21 +25,18 @@ fn app() -> Html {
             spawn_local(async move {
                 // 페이지 로드 시 항상 콜백 체크
                 match AuthService::handle_auth_callback().await {
-                    Ok(_) => {
-                        web_sys::console::log_1(&"Auth callback check completed".into());
+                    Ok(processed) => {
+                        if processed {
+                            web_sys::console::log_1(&"Auth callback successfully processed.".into());
+                            // 콜백 처리 후 리렌더링을 위해 상태 변경
+                            force_render.force_update();
+                        }
                     }
                     Err(e) => {
                         web_sys::console::error_1(&format!("Auth callback error: {}", e).into());
                     }
                 }
-
                 is_checking_auth.set(false);
-
-                // 토큰이 있었으면 강제 리렌더링
-                let hash = window().unwrap().location().hash().unwrap_or_default();
-                if hash.contains("access_token") {
-                    force_render.force_update();
-                }
             });
             || ()
         });

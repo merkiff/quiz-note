@@ -11,30 +11,25 @@ impl QuestionService {
         Ok(quests)
     }
 
-    pub async fn create(mut question: Question) -> Result<Question, String> {
+    pub async fn get_by_id(id: &str) -> Result<Question, String> {
         let client = SupabaseClient::new();
+        client.get_question_by_id(id).await
+    }
 
-        // 보기에 순서(display_order) 부여
-        for (index, option) in question.options.iter_mut().enumerate() {
-            option.display_order = index as i32;
-        }
-
-        // 유효성 검사
-        if question.options.len() < 2 {
-            return Err("최소 2개의 보기가 필요합니다.".to_string());
-        }
-        if !question.options.iter().any(|o| o.is_correct) {
-            return Err("정답을 선택해주세요.".to_string());
-        }
-
+    pub async fn create(mut question: Question) -> Result<Question, String> {
+        Self::validate_question(&mut question)?;
+        let client = SupabaseClient::new();
         client.create_question(&question).await?;
-        
-        // question_count 업데이트는 Supabase DB 트리거로 처리하는 것이 더 효율적입니다.
-        // 일단 클라이언트에서는 생략합니다.
-
         Ok(question)
     }
-    
+
+    pub async fn update(mut question: Question) -> Result<Question, String> {
+        Self::validate_question(&mut question)?;
+        let client = SupabaseClient::new();
+        client.update_question(&question).await?;
+        Ok(question)
+    }
+
     pub async fn update_stats(question: &Question) -> Result<(), String> {
         let client = SupabaseClient::new();
         client.update_question_stats(question).await
@@ -43,5 +38,18 @@ impl QuestionService {
     pub async fn delete(id: &str) -> Result<(), String> {
         let client = SupabaseClient::new();
         client.delete_question(id).await
+    }
+
+    fn validate_question(question: &mut Question) -> Result<(), String> {
+        if question.options.len() < 2 {
+            return Err("최소 2개의 보기가 필요합니다.".to_string());
+        }
+        if !question.options.iter().any(|o| o.is_correct) {
+            return Err("정답을 선택해주세요.".to_string());
+        }
+        for (index, option) in question.options.iter_mut().enumerate() {
+            option.display_order = index as i32;
+        }
+        Ok(())
     }
 }

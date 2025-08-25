@@ -3,7 +3,6 @@ use crate::components::{CertificateDetail, CertificateList, Home, QuestionForm, 
 use crate::services::AuthService;
 use yew::prelude::*;
 use yew_router::prelude::*;
-use web_sys::window;
 
 #[derive(Clone, Routable, PartialEq)]
 pub enum Route {
@@ -26,65 +25,30 @@ pub enum Route {
     NotFound,
 }
 
-pub fn switch(routes: Route) -> Html {
-    // 로그인 체크
-    // 해시에 access_token이 있으면 처리 중이므로 로딩 표시
-    let hash = window().unwrap().location().hash().unwrap_or_default();
-    if hash.contains("access_token") {
-        return html! {
-            <div class="min-h-screen flex items-center justify-center">
-                <div class="text-center">
-                    <p class="text-gray-500 mb-2">{"로그인 처리 중..."}</p>
-                    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-                </div>
-            </div>
-        };
+// 제네릭 T를 제거하고 Redirect<Route>로 명시적으로 변경
+fn render_protected_route(component: Html) -> Html {
+    if AuthService::is_authenticated() {
+        component
+    } else {
+        html! { <Redirect<Route> to={Route::Login} /> }
     }
-    let is_authenticated = AuthService::is_authenticated();
+}
 
+pub fn switch(routes: Route) -> Html {
     match routes {
         Route::Login => html! { <Login /> },
-        Route::Home => {
-            if is_authenticated {
-                html! { <Home /> }
-            } else {
-                html! { <Redirect<Route> to={Route::Login} /> }
-            }
-        }
-        Route::Certificates => {
-            if is_authenticated {
-                html! { <CertificateList /> }
-            } else {
-                html! { <Redirect<Route> to={Route::Login} /> }
-            }
-        }
+        // 헬퍼 함수 호출 시 타입 인자 제거
+        Route::Home => render_protected_route(html! { <Home /> }),
+        Route::Certificates => render_protected_route(html! { <CertificateList /> }),
         Route::CertificateDetail { id } => {
-            if is_authenticated {
-                html! { <CertificateDetail {id} /> }
-            } else {
-                html! { <Redirect<Route> to={Route::Login} /> }
-            }
+            render_protected_route(html! { <CertificateDetail {id} /> })
         }
-        Route::NewQuestion => {
-            if is_authenticated {
-                html! { <QuestionForm /> }
-            } else {
-                html! { <Redirect<Route> to={Route::Login} /> }
-            }
-        }
+        Route::NewQuestion => render_protected_route(html! { <QuestionForm /> }),
         Route::EditQuestion { id } => {
-            if is_authenticated {
-                html! { <h1>{format!("문제 수정: {}", id)}</h1> }
-            } else {
-                html! { <Redirect<Route> to={Route::Login} /> }
-            }
+            render_protected_route(html! { <QuestionForm id={Some(id)} /> })
         }
         Route::Quiz { certificate_id } => {
-            if is_authenticated {
-                html! { <QuizPage {certificate_id} /> }
-            } else {
-                html! { <Redirect<Route> to={Route::Login} /> }
-            }
+            render_protected_route(html! { <QuizPage {certificate_id} /> })
         }
         Route::NotFound => html! {
             <div class="text-center py-12">

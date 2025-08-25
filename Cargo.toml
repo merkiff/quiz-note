@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+rand = "0.8"
 # Yew 프레임워크
 yew = { version = "0.21", features = ["csr"] }
 yew-router = "0.18"

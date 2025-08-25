@@ -1,3 +1,5 @@
+// merkiff/quiz-note/quiz-note-5fd88a8bafdcd6d429a3ca89d3dae72011de7c5a/src/components/question/form.rs
+
 use crate::models::{Certificate, Question, QuestionOption};
 use crate::routes::Route;
 use crate::services::{CertificateService, QuestionService};
@@ -6,9 +8,18 @@ use yew::prelude::*;
 use yew_router::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
+#[derive(Properties, PartialEq)]
+pub struct QuestionFormProps {
+    #[prop_or_default]
+    pub id: Option<String>,
+}
+
 #[function_component(QuestionForm)]
-pub fn question_form() -> Html {
+pub fn question_form(props: &QuestionFormProps) -> Html {
     let navigator = use_navigator().unwrap();
+    let question_id = props.id.clone();
+    let is_edit_mode = question_id.is_some();
+
     let certificates = use_state(Vec::<Certificate>::new);
     let selected_certificate = use_state(String::new);
     let question_content = use_state(String::new);
@@ -22,19 +33,43 @@ pub fn question_form() -> Html {
         ]
     });
     let error = use_state(|| None::<String>);
-    let is_loading = use_state(|| true); // 자격증 로딩을 위해 true로 시작
+    let is_loading = use_state(|| true);
 
     {
         let certificates = certificates.clone();
         let error = error.clone();
         let is_loading = is_loading.clone();
+        
+        let question_content = question_content.clone();
+        let explanation = explanation.clone();
+        let options = options.clone();
+        let selected_certificate = selected_certificate.clone();
+        
+        let question_id = question_id.clone();
+
         use_effect_with((), move |_| {
             spawn_local(async move {
+                is_loading.set(true);
                 match CertificateService::get_all().await {
                     Ok(certs) => certificates.set(certs),
                     Err(e) => error.set(Some(e)),
                 }
-                is_loading.set(false); // 로딩 완료
+
+                if let Some(id) = question_id {
+                    match QuestionService::get_by_id(&id).await {
+                        Ok(q) => {
+                            selected_certificate.set(q.certificate_id);
+                            question_content.set(q.content);
+                            explanation.set(q.explanation);
+                            let opts = q.options.into_iter()
+                                .map(|o| (o.content, o.is_correct, o.explanation))
+                                .collect();
+                            options.set(opts);
+                        }
+                        Err(e) => error.set(Some(e)),
+                    }
+                }
+                is_loading.set(false);
             });
             || ()
         });
@@ -125,6 +160,7 @@ pub fn question_form() -> Html {
         let options = options.clone();
         let error = error.clone();
         let is_loading = is_loading.clone();
+        let question_id = props.id.clone();
 
         Callback::from(move |e: SubmitEvent| {
             e.prevent_default();
@@ -138,23 +174,11 @@ pub fn question_form() -> Html {
                 error.set(Some("문제를 입력해주세요.".to_string()));
                 return;
             }
-
-            let mut question = Question::new((*selected_certificate).clone(), (*question_content).clone());
-            question.explanation = (*explanation).clone();
-            for (content, is_correct, expl) in (*options).iter() {
-                if !content.trim().is_empty() {
-                    let mut option = QuestionOption::new(content.clone(), *is_correct);
-                    option.explanation = expl.clone();
-                    question.options.push(option);
-                }
-            }
-            
-            // 유효성 검사 추가
-            if question.options.iter().filter(|o| !o.content.trim().is_empty()).count() < 2 {
+            if options.iter().filter(|(c, _, _)| !c.trim().is_empty()).count() < 2 {
                  error.set(Some("최소 2개 이상의 보기를 입력해주세요.".to_string()));
                  return;
             }
-             if !question.options.iter().any(|o| o.is_correct) {
+            if !options.iter().any(|(_, correct, _)| *correct) {
                  error.set(Some("정답을 선택해주세요.".to_string()));
                  return;
             }
@@ -162,9 +186,44 @@ pub fn question_form() -> Html {
             let navigator = navigator.clone();
             let error = error.clone();
             let is_loading = is_loading.clone();
+            let question_id = question_id.clone();
+            let selected_certificate = selected_certificate.clone();
+            let question_content = question_content.clone();
+            let explanation = explanation.clone();
+            let options = options.clone();
+
             spawn_local(async move {
                 is_loading.set(true);
-                match QuestionService::create(question).await {
+
+                let mut opts_to_save = vec![];
+                for (content, is_correct, expl) in (*options).iter() {
+                    if !content.trim().is_empty() {
+                        let mut option = QuestionOption::new(content.clone(), *is_correct);
+                        option.explanation = expl.clone();
+                        opts_to_save.push(option);
+                    }
+                }
+
+                let result = if let Some(id) = question_id {
+                    // 수정 모드
+                    match QuestionService::get_by_id(&id).await {
+                        Ok(mut question) => {
+                            question.content = (*question_content).clone();
+                            question.explanation = (*explanation).clone();
+                            question.options = opts_to_save;
+                            QuestionService::update(question).await.map(|_| ())
+                        },
+                        Err(e) => Err(e),
+                    }
+                } else {
+                    // 생성 모드
+                    let mut question = Question::new((*selected_certificate).clone(), (*question_content).clone());
+                    question.explanation = (*explanation).clone();
+                    question.options = opts_to_save;
+                    QuestionService::create(question).await.map(|_| ())
+                };
+
+                match result {
                     Ok(_) => navigator.push(&Route::Certificates),
                     Err(e) => error.set(Some(e)),
                 }
@@ -175,7 +234,9 @@ pub fn question_form() -> Html {
 
     html! {
         <div class="max-w-4xl mx-auto px-4 py-5 sm:p-6">
-            <h2 class="text-2xl font-bold text-gray-900 mb-6">{"새 문제 작성"}</h2>
+            <h2 class="text-2xl font-bold text-gray-900 mb-6">
+                { if is_edit_mode { "문제 수정" } else { "새 문제 작성" } }
+            </h2>
 
             <form onsubmit={on_submit} class="space-y-6">
                  <div>
@@ -184,7 +245,7 @@ pub fn question_form() -> Html {
                         id="certificate-select"
                         class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md border"
                         onchange={on_certificate_change}
-                        disabled={*is_loading}
+                        disabled={*is_loading || is_edit_mode}
                     >
                         <option value="" selected={selected_certificate.is_empty()}>{"자격증을 선택하세요"}</option>
                         { for certificates.iter().map(|cert| {

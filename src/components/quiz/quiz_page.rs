@@ -5,6 +5,8 @@ use chrono::Utc;
 use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
 use yew_router::prelude::*;
+use rand::seq::SliceRandom;
+use rand::thread_rng;
 
 #[derive(Properties, PartialEq)]
 pub struct QuizPageProps {
@@ -53,7 +55,9 @@ pub fn quiz_page(props: &QuizPageProps) -> Html {
                 
                 // 문제 로드
                 match QuestionService::get_by_certificate(&certificate_id).await {
-                    Ok(quests) if !quests.is_empty() => {
+                    Ok(mut quests) if !quests.is_empty() => {
+                        let mut rng = thread_rng();
+                        quests.shuffle(&mut rng);
                         questions.set(quests);
                         quiz_state.set(QuizState::InProgress {
                             current_index: 0,

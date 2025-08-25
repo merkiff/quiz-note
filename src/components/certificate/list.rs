@@ -1,10 +1,11 @@
-use yew::prelude::*;
-use yew_router::prelude::*;
-use wasm_bindgen_futures::spawn_local;
+use crate::components::CertificateForm;
 use crate::models::Certificate;
 use crate::routes::Route;
 use crate::services::CertificateService;
-use crate::components::CertificateForm;
+use wasm_bindgen_futures::spawn_local;
+use web_sys::window;
+use yew::prelude::*;
+use yew_router::prelude::*;
 
 #[function_component(CertificateList)]
 pub fn certificate_list() -> Html {
@@ -13,20 +14,30 @@ pub fn certificate_list() -> Html {
     let error = use_state(|| None::<String>);
     let is_loading = use_state(|| true);
 
-    // 데이터를 비동기로 불러오기
-    {
+    let load_certificates = {
         let certificates = certificates.clone();
         let error = error.clone();
         let is_loading = is_loading.clone();
-        use_effect_with((), move |_| {
+        Callback::from(move |_| {
+            let certificates = certificates.clone();
+            let error = error.clone();
+            let is_loading = is_loading.clone();
             spawn_local(async move {
                 is_loading.set(true);
+                error.set(None);
                 match CertificateService::get_all().await {
                     Ok(certs) => certificates.set(certs),
                     Err(e) => error.set(Some(e)),
                 }
                 is_loading.set(false);
             });
+        })
+    };
+
+    {
+        let load_certificates = load_certificates.clone();
+        use_effect_with((), move |_| {
+            load_certificates.emit(());
             || ()
         });
     }
@@ -34,46 +45,31 @@ pub fn certificate_list() -> Html {
     let on_delete = {
         let certificates = certificates.clone();
         let error = error.clone();
-        Callback::from(move |id: String| {
-            // Callback 내부에서 사용할 상태 핸들 복제
+        Callback::from(move |(id, name): (String, String)| {
             let certificates = certificates.clone();
             let error = error.clone();
-            spawn_local(async move {
-                if let Err(e) = CertificateService::delete(&id).await {
-                    error.set(Some(e));
-                } else {
-                    certificates.set(certificates.iter().filter(|c| c.id != id).cloned().collect());
-                }
-            });
+            let confirmation_message = format!("[{}] 자격증과 관련된 모든 문제가 삭제됩니다. 정말 삭제하시겠습니까?", name);
+
+            if window().unwrap().confirm_with_message(&confirmation_message).unwrap_or(false) {
+                spawn_local(async move {
+                    if let Err(e) = CertificateService::delete(&id).await {
+                        error.set(Some(e));
+                    } else {
+                        certificates.set(certificates.iter().filter(|c| c.id != id).cloned().collect());
+                    }
+                });
+            }
         })
     };
 
     let on_form_submit = {
         let show_form = show_form.clone();
-        let certificates = certificates.clone();
-        let error = error.clone();
-        let is_loading = is_loading.clone();
-
+        let load_certificates = load_certificates.clone();
         Callback::from(move |_| {
             show_form.set(false);
-            // Callback 내부에서 사용할 상태 핸들 복제 (오류 수정 지점)
-            let certificates = certificates.clone();
-            let error = error.clone();
-            let is_loading = is_loading.clone();
-            spawn_local(async move {
-                is_loading.set(true);
-                match CertificateService::get_all().await {
-                    Ok(certs) => {
-                        certificates.set(certs);
-                        error.set(None); // 성공 시 에러 메시지 초기화
-                    },
-                    Err(e) => error.set(Some(e)),
-                }
-                is_loading.set(false);
-            });
+            load_certificates.emit(());
         })
     };
-
 
     html! {
         <div class="px-4 py-5 sm:p-6">
@@ -112,8 +108,9 @@ pub fn certificate_list() -> Html {
                     html! {
                         <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                             {for certificates.iter().map(|cert| {
-                                let cert_id_for_delete = cert.id.clone();
                                 let on_delete = on_delete.clone();
+                                let cert_id = cert.id.clone();
+                                let cert_name = cert.name.clone();
 
                                 html! {
                                     <div class="bg-white overflow-hidden shadow rounded-lg">
@@ -134,7 +131,7 @@ pub fn certificate_list() -> Html {
                                                     </button>
                                                 </Link<Route>>
                                                 <button
-                                                    onclick={move |_| on_delete.emit(cert_id_for_delete.clone())}
+                                                    onclick={move |_| on_delete.emit((cert_id.clone(), cert_name.clone()))}
                                                     class="text-red-600 hover:text-red-900 text-sm font-medium"
                                                 >
                                                     {"삭제"}

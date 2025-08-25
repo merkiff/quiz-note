@@ -13,14 +13,15 @@ pub struct Question {
     pub created_at: DateTime<Utc>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_attempt: Option<DateTime<Utc>>,
+    #[serde(default)]
     pub attempt_count: u32,
+    #[serde(default)]
     pub correct_count: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct QuestionOption {
     pub id: String,
-    // 이 필드를 추가합니다.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub question_id: String,
     pub content: String,
@@ -35,6 +36,7 @@ pub struct Certificate {
     pub id: String,
     pub name: String,
     pub description: String,
+    #[serde(default)]
     pub question_count: u32,
     pub created_at: DateTime<Utc>,
 }
@@ -59,7 +61,7 @@ impl QuestionOption {
     pub fn new(content: String, is_correct: bool) -> Self {
         Self {
             id: Uuid::new_v4().to_string(),
-            question_id: String::new(), // 필드를 초기화합니다.
+            question_id: String::new(),
             content,
             is_correct,
             explanation: String::new(),
@@ -78,13 +80,4 @@ impl Certificate {
             created_at: Utc::now(),
         }
     }
-}
-
-// 이 함수는 더 이상 사용되지 않으므로 삭제하거나 주석 처리합니다.
-// fn is_zero(num: &i32) -> bool {
-//     *num == 0
-// }
-
-fn is_default<T: Default + PartialEq>(t: &T) -> bool {
-    *t == T::default()
 }
