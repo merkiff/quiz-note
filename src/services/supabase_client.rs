@@ -39,6 +39,7 @@ impl SupabaseClient {
     }
 
     // --- Certificate CRUD ---
+    // (get_all_certificates, get_certificate_by_id, create_certificate, delete_certificate 함수는 변경 없음)
     pub async fn get_all_certificates(&self) -> Result<Vec<Certificate>, String> {
         let url = format!("{}/rest/v1/certificates?select=*", SUPABASE_CONFIG.url);
         let response = self.request_builder("GET", &url).await?.send().await.map_err(|e| e.to_string())?;
@@ -90,6 +91,7 @@ impl SupabaseClient {
 
 
     // --- Question & Option CRUD ---
+    // (get_questions_by_certificate, get_question_by_id 함수는 변경 없음)
     pub async fn get_questions_by_certificate(&self, cert_id: &str) -> Result<Vec<Question>, String> {
         let url = format!(
             "{}/rest/v1/questions?certificate_id=eq.{}&select=*,question_options(*)",
@@ -144,15 +146,24 @@ impl SupabaseClient {
         Ok(())
     }
 
+    // ===== 수정된 부분 시작 =====
     pub async fn create_question(&self, question: &Question) -> Result<(), String> {
         let auth_header = self.get_auth_header_string().await?;
-
         let q_url = format!("{}/rest/v1/questions", SUPABASE_CONFIG.url);
+
+        // questions 테이블에 있는 필드만으로 JSON을 만듭니다.
+        let q_body = json!({
+            "id": question.id,
+            "certificate_id": question.certificate_id,
+            "content": question.content,
+            "explanation": question.explanation
+        });
+
         let q_res = Request::post(&q_url)
             .header("apikey", SUPABASE_CONFIG.anon_key)
             .header("Authorization", &auth_header)
             .header("Content-Type", "application/json")
-            .json(question).map_err(|e| e.to_string())?
+            .json(&q_body).map_err(|e| e.to_string())?
             .send().await.map_err(|e| e.to_string())?;
 
         if !q_res.ok() {
@@ -170,6 +181,7 @@ impl SupabaseClient {
     pub async fn update_question(&self, question: &Question) -> Result<(), String> {
         let auth_header = self.get_auth_header_string().await?;
 
+        // 1. 기존 보기들 먼저 삭제 (이 로직은 그대로 유지)
         let del_opt_url = format!("{}/rest/v1/question_options?question_id=eq.{}", SUPABASE_CONFIG.url, question.id);
         let del_res = Request::delete(&del_opt_url)
             .header("apikey", SUPABASE_CONFIG.anon_key)
@@ -180,6 +192,7 @@ impl SupabaseClient {
             return Err(format!("기존 보기 삭제 실패: {}", del_res.text().await.unwrap_or_default()));
         }
 
+        // 2. 문제 내용 업데이트 (테이블에 있는 필드만 전송)
         let q_url = format!("{}/rest/v1/questions?id=eq.{}", SUPABASE_CONFIG.url, question.id);
         let q_body = json!({
             "content": question.content,
@@ -196,6 +209,7 @@ impl SupabaseClient {
             return Err(format!("문제 업데이트 실패: {}", q_res.text().await.unwrap_or_default()));
         }
 
+        // 3. 새 보기들 생성 (이 로직은 그대로 유지)
         let options_with_id: Vec<QuestionOption> = question.options.iter().map(|opt| {
             let mut new_opt = opt.clone();
             new_opt.question_id = question.id.clone();
@@ -203,7 +217,9 @@ impl SupabaseClient {
         }).collect();
         self.upsert_options(&auth_header, &options_with_id).await
     }
+    // ===== 수정된 부분 끝 =====
 
+    // (update_question_stats, delete_question 함수는 변경 없음)
     pub async fn update_question_stats(&self, question: &Question) -> Result<(), String> {
         let url = format!("{}/rest/v1/questions?id=eq.{}", SUPABASE_CONFIG.url, question.id);
         let body = json!({

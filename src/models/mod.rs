@@ -3,30 +3,45 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ExportedCertificate {
+    #[serde(flatten)]
+    pub certificate: Certificate,
+    pub questions: Vec<Question>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Question {
     pub id: String,
     pub certificate_id: String,
     pub content: String,
-    #[serde(rename = "question_options", skip_serializing, default)]
-    pub options: Vec<QuestionOption>,
     pub explanation: String,
+
+    // API 통신 및 내보내기/가져오기 모두에서 `options` 필드가 필요합니다.
+    #[serde(rename = "question_options", default)]
+    pub options: Vec<QuestionOption>,
+
+    // 통계 정보는 내보내기 파일에 포함하지 않아도 되므로 skip_serializing을 유지합니다.
+    #[serde(skip_serializing, default)]
     pub created_at: DateTime<Utc>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing, default)]
     pub last_attempt: Option<DateTime<Utc>>,
-    #[serde(default)]
+    #[serde(skip_serializing, default)]
     pub attempt_count: u32,
-    #[serde(default)]
+    #[serde(skip_serializing, default)]
     pub correct_count: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct QuestionOption {
+    // ID 필드들은 DB에 저장될 때 반드시 필요하므로 직렬화(serialize) 되어야 합니다.
     pub id: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub question_id: String,
+
     pub content: String,
     pub is_correct: bool,
     pub explanation: String,
+    
     #[serde(default)]
     pub display_order: i32,
 }
@@ -36,11 +51,15 @@ pub struct Certificate {
     pub id: String,
     pub name: String,
     pub description: String,
-    #[serde(default)]
+
+    // question_count는 DB 트리거로 관리되므로 직렬화할 필요가 없습니다.
+    #[serde(skip_serializing, default)]
     pub question_count: u32,
+    #[serde(skip_serializing, default)]
     pub created_at: DateTime<Utc>,
 }
 
+// impl 블록들은 그대로 유지합니다.
 impl Question {
     pub fn new(certificate_id: String, content: String) -> Self {
         Self {

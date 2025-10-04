@@ -1,28 +1,27 @@
-use crate::models::{Certificate, Question};
+use crate::models::{Certificate, Question, QuestionOption};
 use crate::routes::Route;
 use crate::services::{CertificateService, QuestionService};
 use chrono::Utc;
+use rand::seq::SliceRandom;
+use rand::thread_rng;
+use std::collections::HashSet;
 use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
 use yew_router::prelude::*;
-use rand::seq::SliceRandom;
-use rand::thread_rng;
 
 #[derive(Properties, PartialEq)]
 pub struct QuizPageProps {
     pub certificate_id: String,
 }
 
-// ... (QuizState enum remains the same)
 #[derive(Clone, PartialEq)]
 enum QuizState {
     Loading,
     NoQuestions,
     InProgress {
         current_index: usize,
-        selected_option: Option<String>,
-        show_result: bool,
-        is_correct: bool,
+        tried_incorrect_options: HashSet<String>,
+        is_solved: bool,
     },
     Completed {
         total_questions: usize,
@@ -30,13 +29,12 @@ enum QuizState {
     },
 }
 
-
 #[function_component(QuizPage)]
 pub fn quiz_page(props: &QuizPageProps) -> Html {
     let certificate = use_state(|| None::<Certificate>);
     let questions = use_state(Vec::<Question>::new);
     let quiz_state = use_state(|| QuizState::Loading);
-    let attempt_results = use_state(Vec::<bool>::new);
+    let correct_answer_count = use_state(|| 0);
 
     {
         let certificate = certificate.clone();
@@ -61,9 +59,8 @@ pub fn quiz_page(props: &QuizPageProps) -> Html {
                         questions.set(quests);
                         quiz_state.set(QuizState::InProgress {
                             current_index: 0,
-                            selected_option: None,
-                            show_result: false,
-                            is_correct: false,
+                            tried_incorrect_options: HashSet::new(),
+                            is_solved: false,
                         });
                     }
                     _ => quiz_state.set(QuizState::NoQuestions),
@@ -73,91 +70,56 @@ pub fn quiz_page(props: &QuizPageProps) -> Html {
         });
     }
     
-    // ... (on_option_select callback remains the same)
-    let on_option_select = {
-        let quiz_state = quiz_state.clone();
-        Callback::from(move |option_id: String| {
-            if let QuizState::InProgress {
-                current_index,
-                show_result,
-                ..
-            } = &*quiz_state
-            {
-                if !show_result {
-                    quiz_state.set(QuizState::InProgress {
-                        current_index: *current_index,
-                        selected_option: Some(option_id),
-                        show_result: false,
-                        is_correct: false,
-                    });
-                }
-            }
-        })
-    };
-
-
-    let on_submit_answer = {
+    let on_option_click = {
         let quiz_state = quiz_state.clone();
         let questions = questions.clone();
-        let attempt_results = attempt_results.clone();
+        let correct_answer_count = correct_answer_count.clone();
 
-        Callback::from(move |_| {
-            if let QuizState::InProgress { current_index, selected_option, .. } = &*quiz_state {
-                if let (Some(selected_id), Some(question)) = (selected_option, questions.get(*current_index)) {
-                    let is_correct = question.options.iter().any(|opt| opt.id == *selected_id && opt.is_correct);
+        Callback::from(move |option: QuestionOption| {
+            if let QuizState::InProgress { current_index, mut tried_incorrect_options, is_solved } = (*quiz_state).clone() {
+                if is_solved { return; }
 
-                    if is_correct {
-                        let mut results = (*attempt_results).clone();
-                        results.push(true);
-                        attempt_results.set(results);
-                    }
-
+                if let Some(question) = questions.get(current_index) {
                     let mut updated_question = question.clone();
-                    updated_question.attempt_count += 1;
-                    if is_correct {
-                        updated_question.correct_count += 1;
-                    }
-                    updated_question.last_attempt = Some(Utc::now());
+                    
+                    if option.is_correct {
+                        // 정답일 경우
+                        if tried_incorrect_options.is_empty() {
+                            // 첫 시도에 정답
+                            updated_question.correct_count += 1;
+                            correct_answer_count.set(*correct_answer_count + 1);
+                        }
+                        updated_question.attempt_count += 1;
+                        updated_question.last_attempt = Some(Utc::now());
+                        
+                        quiz_state.set(QuizState::InProgress {
+                            current_index,
+                            tried_incorrect_options,
+                            is_solved: true,
+                        });
 
-                    // 비동기로 통계 업데이트
-                    spawn_local(async move {
+                    } else {
+                        // 오답일 경우
+                        if !tried_incorrect_options.contains(&option.id) {
+                            tried_incorrect_options.insert(option.id);
+                             if tried_incorrect_options.len() == 1 {
+                                // 해당 문제에 대한 첫 시도가 오답일 때만 attempt_count 증가
+                                updated_question.attempt_count += 1;
+                                updated_question.last_attempt = Some(Utc::now());
+                            }
+                            quiz_state.set(QuizState::InProgress {
+                                current_index,
+                                tried_incorrect_options,
+                                is_solved: false,
+                            });
+                        }
+                    }
+
+                    // 통계 업데이트는 정답을 맞췄거나, 첫 오답일 경우에만 실행
+                     spawn_local(async move {
                         let _ = QuestionService::update_stats(&updated_question).await;
                     });
-
-                    quiz_state.set(QuizState::InProgress {
-                        current_index: *current_index,
-                        selected_option: selected_option.clone(),
-                        show_result: true,
-                        is_correct,
-                    });
                 }
-            }
-        })
-    };
-    
-    // ... (on_retry and on_next_question callbacks remain the same)
-    // ...
-
-    // ... (UI Rendering part remains mostly the same)
-    // ...
-
-    // The rest of the file can remain as it is, since the logic inside is mostly state manipulation
-    // which does not need to be async. The data loading and saving parts are now async.
-    // Make sure the entire file content is replaced with this structure.
-    let current_question = match &*quiz_state {
-        QuizState::InProgress { current_index, .. } => questions.get(*current_index).cloned(),
-        _ => None,
-    };
-    let on_retry = {
-        let quiz_state = quiz_state.clone();
-        Callback::from(move |_| {
-            if let QuizState::InProgress { current_index, .. } = &*quiz_state {
-                quiz_state.set(QuizState::InProgress {
-                    current_index: *current_index,
-                    selected_option: None,
-                    show_result: false,
-                    is_correct: false,
-                });
             }
         })
     };
@@ -165,60 +127,36 @@ pub fn quiz_page(props: &QuizPageProps) -> Html {
     let on_next_question = {
         let quiz_state = quiz_state.clone();
         let questions = questions.clone();
-        let attempt_results = attempt_results.clone();
+        let correct_answer_count = correct_answer_count.clone();
 
         Callback::from(move |_| {
-            if let QuizState::InProgress {
-                current_index,
-                is_correct,
-                ..
-            } = &*quiz_state
-            {
-                if !is_correct {
-                    return;
-                }
-
+            if let QuizState::InProgress { current_index, .. } = &*quiz_state {
                 let next_index = current_index + 1;
-
                 if next_index >= questions.len() {
-                    let correct_count = attempt_results.iter().filter(|&&x| x).count();
                     quiz_state.set(QuizState::Completed {
                         total_questions: questions.len(),
-                        correct_answers: correct_count,
+                        correct_answers: *correct_answer_count,
                     });
                 } else {
                     quiz_state.set(QuizState::InProgress {
                         current_index: next_index,
-                        selected_option: None,
-                        show_result: false,
-                        is_correct: false,
+                        tried_incorrect_options: HashSet::new(),
+                        is_solved: false,
                     });
                 }
             }
         })
     };
+
     let current_state = (*quiz_state).clone();
-    let show_result = match &current_state {
-        QuizState::InProgress { show_result, .. } => *show_result,
-        _ => false,
-    };
-    let is_correct = match &current_state {
-        QuizState::InProgress { is_correct, .. } => *is_correct,
-        _ => false,
-    };
-    let selected_option = match &current_state {
-        QuizState::InProgress {
-            selected_option, ..
-        } => selected_option.clone(),
+    let current_question = match &current_state {
+        QuizState::InProgress { current_index, .. } => questions.get(*current_index).cloned(),
         _ => None,
     };
-    let current_index = match &current_state {
-        QuizState::InProgress { current_index, .. } => *current_index,
-        _ => 0,
-    };
+
     html! {
         <div class="max-w-4xl mx-auto px-4 py-5 sm:p-6">
-            {match &current_state {
+            {match current_state {
                 QuizState::Loading => html! {
                     <div class="text-center py-12">
                         <p class="text-gray-500">{"문제를 불러오는 중..."}</p>
@@ -236,11 +174,10 @@ pub fn quiz_page(props: &QuizPageProps) -> Html {
                     </div>
                 },
 
-                QuizState::InProgress { .. } => {
+                QuizState::InProgress { current_index, tried_incorrect_options, is_solved } => {
                     if let Some(question) = current_question {
                         html! {
                             <div>
-                                // 진행 상황
                                 <div class="mb-6">
                                     <div class="flex justify-between text-sm text-gray-600 mb-2">
                                         <span>{format!("문제 {} / {}", current_index + 1, questions.len())}</span>
@@ -258,51 +195,43 @@ pub fn quiz_page(props: &QuizPageProps) -> Html {
                                     </div>
                                 </div>
 
-                                // 문제
                                 <div class="bg-white shadow rounded-lg p-6 mb-6">
                                     <h3 class="text-lg font-medium text-gray-900 mb-4">
                                         {&question.content}
                                     </h3>
 
-                                    // 보기들
                                     <div class="space-y-3">
-                                        {for question.options.iter().enumerate().map(|(idx, option)| {
-                                            let option_id = option.id.clone();
-                                            let on_option_select = on_option_select.clone();
-                                            let is_selected = selected_option.as_ref() == Some(&option.id);
-                                            let show_correct = show_result && option.is_correct;
-                                            let show_incorrect = show_result && is_selected && !option.is_correct;
+                                        {for question.options.iter().map(|option| {
+                                            let on_option_click = on_option_click.clone();
+                                            let option_clone = option.clone();
+                                            
+                                            let is_tried_incorrect = tried_incorrect_options.contains(&option.id);
+                                            let show_correct = is_solved && option.is_correct;
+                                            
+                                            let mut classes = "p-4 rounded-lg border-2 transition-all".to_string();
+                                            let is_clickable = !is_solved && !is_tried_incorrect;
+
+                                            if show_correct {
+                                                classes.push_str(" border-green-500 bg-green-50");
+                                            } else if is_tried_incorrect {
+                                                classes.push_str(" border-red-500 bg-red-50 cursor-not-allowed");
+                                            } else if is_solved {
+                                                classes.push_str(" border-gray-300 bg-gray-50 cursor-not-allowed");
+                                            } else {
+                                                classes.push_str(" border-gray-300 hover:border-blue-500 cursor-pointer");
+                                            }
 
                                             html! {
                                                 <div
                                                     key={option.id.clone()}
-                                                    onclick={move |_| {
-                                                        if !show_result {
-                                                            on_option_select.emit(option_id.clone())
-                                                        }
-                                                    }}
-                                                    class={format!(
-                                                        "p-4 rounded-lg border-2 transition-all {}",
-                                                        if show_correct {
-                                                            "border-green-500 bg-green-50"
-                                                        } else if show_incorrect {
-                                                            "border-red-500 bg-red-50"
-                                                        } else if is_selected {
-                                                            "border-blue-500 bg-blue-50"
-                                                        } else if !show_result {
-                                                            "border-gray-300 hover:border-gray-400 cursor-pointer"
-                                                        } else {
-                                                            "border-gray-300"
-                                                        }
-                                                    )}
+                                                    onclick={ if is_clickable { Some(Callback::from(move |_| on_option_click.emit(option_clone.clone()))) } else { None } }
+                                                    class={classes}
                                                 >
                                                     <div class="flex items-start">
-                                                        <span class="mr-3 font-medium">{format!("{}.", idx + 1)}</span>
+                                                        <span class="mr-3 font-medium">{format!("{}.", option.display_order + 1)}</span>
                                                         <div class="flex-1">
                                                             <p>{&option.content}</p>
-
-                                                            // 해설 표시
-                                                            {if show_result && !option.explanation.is_empty() {
+                                                            {if (is_solved || is_tried_incorrect) && !option.explanation.is_empty() {
                                                                 html! {
                                                                     <p class="mt-2 text-sm text-gray-600">
                                                                         {&option.explanation}
@@ -312,16 +241,10 @@ pub fn quiz_page(props: &QuizPageProps) -> Html {
                                                                 html! {}
                                                             }}
                                                         </div>
-
-                                                        // 체크/엑스 마크
-                                                        {if show_result {
-                                                            if option.is_correct {
-                                                                html! { <span class="ml-2 text-green-600">{"✓"}</span> }
-                                                            } else if is_selected && !option.is_correct {
-                                                                html! { <span class="ml-2 text-red-600">{"✗"}</span> }
-                                                            } else {
-                                                                html! {}
-                                                            }
+                                                        {if show_correct {
+                                                            html! { <span class="ml-2 text-green-600 font-bold">{"✓ 정답"}</span> }
+                                                        } else if is_tried_incorrect {
+                                                            html! { <span class="ml-2 text-red-600 font-bold">{"✗ 오답"}</span> }
                                                         } else {
                                                             html! {}
                                                         }}
@@ -331,11 +254,10 @@ pub fn quiz_page(props: &QuizPageProps) -> Html {
                                         })}
                                     </div>
 
-                                    // 전체 해설
-                                    {if show_result && !question.explanation.is_empty() {
+                                    {if is_solved && !question.explanation.is_empty() {
                                         html! {
                                             <div class="mt-6 p-4 bg-gray-50 rounded-lg">
-                                                <h4 class="font-medium text-gray-900 mb-2">{"해설"}</h4>
+                                                <h4 class="font-medium text-gray-900 mb-2">{"전체 해설"}</h4>
                                                 <p class="text-gray-700">{&question.explanation}</p>
                                             </div>
                                         }
@@ -344,56 +266,33 @@ pub fn quiz_page(props: &QuizPageProps) -> Html {
                                     }}
                                 </div>
 
-                                // 버튼 영역
                                 <div class="flex justify-between">
                                     <Link<Route> to={Route::CertificateDetail { id: props.certificate_id.clone() }}>
                                         <button class="text-gray-600 hover:text-gray-900">
                                             {"← 돌아가기"}
                                         </button>
                                     </Link<Route>>
-
-                                    <div>
-                                        {if show_result {
-                                            if is_correct {
-                                                html! {
-                                                    <button
-                                                        onclick={on_next_question}
-                                                        class="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700"
-                                                    >
-                                                        {if current_index == questions.len() - 1 { "결과 보기" } else { "다음 문제" }}
-                                                    </button>
-                                                }
-                                            } else {
-                                                html! {
-                                                    <button
-                                                        onclick={on_retry}
-                                                        class="bg-orange-600 text-white px-6 py-2 rounded-md hover:bg-orange-700"
-                                                    >
-                                                        {"다시 시도"}
-                                                    </button>
-                                                }
-                                            }
-                                        } else {
-                                            html! {
-                                                <button
-                                                    onclick={on_submit_answer}
-                                                    disabled={selected_option.is_none()}
-                                                    class={format!(
-                                                        "px-6 py-2 rounded-md {}",
-                                                        if selected_option.is_some() { "bg-blue-600 text-white hover:bg-blue-700" }
-                                                        else { "bg-gray-300 text-gray-500 cursor-not-allowed" }
-                                                    )}
-                                                >
-                                                    {"답안 제출"}
-                                                </button>
-                                            }
-                                        }}
-                                    </div>
+                                    {if is_solved {
+                                        html! {
+                                            <button
+                                                onclick={on_next_question}
+                                                class="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700"
+                                            >
+                                                {if current_index == questions.len() - 1 { "결과 보기" } else { "다음 문제" }}
+                                            </button>
+                                        }
+                                    } else {
+                                        html! {
+                                            <div class="text-gray-500 italic">
+                                                {"정답을 선택하면 다음으로 넘어갈 수 있습니다."}
+                                            </div>
+                                        }
+                                    }}
                                 </div>
                             </div>
                         }
                     } else {
-                        html! {} // Should be covered by Loading state
+                        html! {}
                     }
                 },
 
@@ -406,8 +305,8 @@ pub fn quiz_page(props: &QuizPageProps) -> Html {
                             </p>
                             <p class="text-gray-600">
                                 {
-                                    if *total_questions > 0 {
-                                        format!("정답률: {}%", correct_answers * 100 / total_questions)
+                                    if total_questions > 0 {
+                                        format!("첫 시도 정답률: {}%", correct_answers * 100 / total_questions)
                                     } else {
                                         "정답률: 0%".to_string()
                                     }

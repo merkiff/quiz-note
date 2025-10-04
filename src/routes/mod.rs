@@ -1,5 +1,5 @@
 use crate::components::auth::Login;
-use crate::components::{CertificateDetail, CertificateList, Home, QuestionForm, QuizPage};
+use crate::components::{CertificateDetail, CertificateList, Home, QuestionForm, QuizPage, DataManagement};
 use crate::services::AuthService;
 use yew::prelude::*;
 use yew_router::prelude::*;
@@ -20,6 +20,8 @@ pub enum Route {
     EditQuestion { id: String },
     #[at("/quiz/:certificate_id")]
     Quiz { certificate_id: String },
+    #[at("/data")] // 추가
+    Data,
     #[not_found]
     #[at("/404")]
     NotFound,
@@ -50,6 +52,7 @@ pub fn switch(routes: Route) -> Html {
         Route::Quiz { certificate_id } => {
             render_protected_route(html! { <QuizPage {certificate_id} /> })
         }
+        Route::Data => render_protected_route(html! { <DataManagement /> }), // 추가
         Route::NotFound => html! {
             <div class="text-center py-12">
                 <h1 class="text-2xl font-bold text-gray-900">{"404 - 페이지를 찾을 수 없습니다"}</h1>
