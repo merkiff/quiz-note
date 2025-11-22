@@ -1,8 +1,7 @@
-// merkiff/quiz-note/quiz-note-5fd88a8bafdcd6d429a3ca89d3dae72011de7c5a/src/components/question/form.rs
-
 use crate::models::{Certificate, Question, QuestionOption};
 use crate::routes::Route;
 use crate::services::{CertificateService, QuestionService};
+use crate::components::Markdown; // [중요] Markdown 컴포넌트 사용
 use web_sys::{HtmlInputElement, HtmlSelectElement, HtmlTextAreaElement};
 use yew::prelude::*;
 use yew_router::prelude::*;
@@ -39,12 +38,10 @@ pub fn question_form(props: &QuestionFormProps) -> Html {
         let certificates = certificates.clone();
         let error = error.clone();
         let is_loading = is_loading.clone();
-        
         let question_content = question_content.clone();
         let explanation = explanation.clone();
         let options = options.clone();
         let selected_certificate = selected_certificate.clone();
-        
         let question_id = question_id.clone();
 
         use_effect_with((), move |_| {
@@ -205,7 +202,6 @@ pub fn question_form(props: &QuestionFormProps) -> Html {
                 }
 
                 let result = if let Some(id) = question_id {
-                    // 수정 모드
                     match QuestionService::get_by_id(&id).await {
                         Ok(mut question) => {
                             question.content = (*question_content).clone();
@@ -216,7 +212,6 @@ pub fn question_form(props: &QuestionFormProps) -> Html {
                         Err(e) => Err(e),
                     }
                 } else {
-                    // 생성 모드
                     let mut question = Question::new((*selected_certificate).clone(), (*question_content).clone());
                     question.explanation = (*explanation).clone();
                     question.options = opts_to_save;
@@ -253,25 +248,34 @@ pub fn question_form(props: &QuestionFormProps) -> Html {
                         })}
                     </select>
                 </div>
+
+                // [수정됨] 문제 입력 및 미리보기 (Split View)
                 <div>
-                    <label class="block text-sm font-medium text-gray-700">
-                        {"문제"}
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        {"문제 (마크다운 지원)"}
                     </label>
-                    <textarea
-                        value={(*question_content).clone()}
-                        onchange={on_question_change}
-                        rows="3"
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2 border"
-                        placeholder="문제를 입력하세요"
-                        disabled={*is_loading}
-                    />
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <textarea
+                            value={(*question_content).clone()}
+                            onchange={on_question_change}
+                            rows="5"
+                            class="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2 border"
+                            placeholder="문제를 입력하세요. (예: **굵게**, `코드`)"
+                            disabled={*is_loading}
+                        />
+                        <div class="border rounded-md p-3 bg-gray-50 overflow-y-auto h-full min-h-[130px]">
+                            <p class="text-xs text-gray-400 mb-2 font-bold">{"미리보기"}</p>
+                            <div class="prose prose-sm max-w-none">
+                                <Markdown content={(*question_content).clone()} />
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
+                // [수정됨] 보기 입력 부분 (미리보기 포함)
                 <div>
                     <div class="flex justify-between items-center mb-2">
-                        <label class="block text-sm font-medium text-gray-700">
-                            {"보기"}
-                        </label>
+                        <label class="block text-sm font-medium text-gray-700">{"보기"}</label>
                         <button
                             type="button"
                             onclick={add_option}
@@ -292,46 +296,64 @@ pub fn question_form(props: &QuestionFormProps) -> Html {
                             let expl_value = expl.clone();
 
                             html! {
-                                <div key={idx.to_string()} class="mb-4 p-4 border rounded-lg bg-gray-50">
+                                <div key={idx.to_string()} class="mb-4 p-4 border rounded-lg bg-white shadow-sm">
                                     <div class="flex items-start space-x-3">
-                                        <input
-                                            type="radio"
-                                            name="correct_answer"
-                                            checked={*is_correct}
-                                            onchange={move |_| on_correct_change.emit(idx)}
-                                            class="mt-1"
-                                            disabled={*is_loading}
-                                        />
-                                        <div class="flex-1">
+                                        <div class="pt-2">
                                             <input
-                                                type="text"
-                                                value={content_value}
-                                                onchange={move |e: Event| {
-                                                    let target: HtmlInputElement = e.target_unchecked_into();
-                                                    on_option_change.emit((idx, target.value()));
-                                                }}
-                                                placeholder={format!("보기 {}", idx + 1)}
-                                                class="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2 border"
+                                                type="radio"
+                                                name="correct_answer"
+                                                checked={*is_correct}
+                                                onchange={move |_| on_correct_change.emit(idx)}
+                                                class="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
                                                 disabled={*is_loading}
                                             />
-                                            <textarea
-                                                value={expl_value}
-                                                onchange={move |e: Event| {
-                                                    let target: HtmlTextAreaElement = e.target_unchecked_into();
-                                                    on_option_explanation_change.emit((idx, target.value()));
-                                                }}
-                                                placeholder="이 보기에 대한 해설 (선택사항)"
-                                                rows="2"
-                                                class="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2 border"
-                                                disabled={*is_loading}
-                                            />
+                                        </div>
+                                        <div class="flex-1 space-y-3">
+                                            <div>
+                                                <input
+                                                    type="text"
+                                                    value={content_value.clone()}
+                                                    onchange={move |e: Event| {
+                                                        let target: HtmlInputElement = e.target_unchecked_into();
+                                                        on_option_change.emit((idx, target.value()));
+                                                    }}
+                                                    placeholder={format!("보기 {}", idx + 1)}
+                                                    class="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2 border"
+                                                    disabled={*is_loading}
+                                                />
+                                                if !content_value.is_empty() {
+                                                    <div class="mt-1 p-2 bg-gray-50 rounded border border-gray-100">
+                                                        <p class="text-[10px] text-gray-400 mb-1">{"미리보기"}</p>
+                                                        <div class="prose prose-sm text-sm"><Markdown content={content_value.clone()} /></div>
+                                                    </div>
+                                                }
+                                            </div>
+                                            <div>
+                                                <textarea
+                                                    value={expl_value.clone()}
+                                                    onchange={move |e: Event| {
+                                                        let target: HtmlTextAreaElement = e.target_unchecked_into();
+                                                        on_option_explanation_change.emit((idx, target.value()));
+                                                    }}
+                                                    placeholder="이 보기에 대한 해설 (선택사항)"
+                                                    rows="2"
+                                                    class="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2 border"
+                                                    disabled={*is_loading}
+                                                />
+                                                if !expl_value.is_empty() {
+                                                    <div class="mt-1 p-2 bg-gray-50 rounded border border-gray-100">
+                                                        <p class="text-[10px] text-gray-400 mb-1">{"해설 미리보기"}</p>
+                                                        <div class="prose prose-sm text-sm text-gray-600"><Markdown content={expl_value.clone()} /></div>
+                                                    </div>
+                                                }
+                                            </div>
                                         </div>
                                         {if options.len() > 2 {
                                             html! {
                                                 <button
                                                     type="button"
                                                     onclick={move |_| remove_option.emit(idx)}
-                                                    class="text-red-600 hover:text-red-900 disabled:opacity-50"
+                                                    class="text-red-600 hover:text-red-900 disabled:opacity-50 p-1"
                                                     disabled={*is_loading}
                                                 >
                                                     {"삭제"}
@@ -347,36 +369,40 @@ pub fn question_form(props: &QuestionFormProps) -> Html {
                     </div>
                 </div>
 
+                // [수정됨] 전체 해설 입력 및 미리보기
                 <div>
-                    <label class="block text-sm font-medium text-gray-700">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
                         {"전체 해설 (선택사항)"}
                     </label>
-                    <textarea
-                        value={(*explanation).clone()}
-                        onchange={on_explanation_change}
-                        rows="3"
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2 border"
-                        placeholder="문제에 대한 전체 해설을 입력하세요"
-                        disabled={*is_loading}
-                    />
+                    <div class="space-y-2">
+                        <textarea
+                            value={(*explanation).clone()}
+                            onchange={on_explanation_change}
+                            rows="3"
+                            class="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2 border"
+                            placeholder="문제에 대한 전체 해설을 입력하세요"
+                            disabled={*is_loading}
+                        />
+                        if !explanation.is_empty() {
+                            <div class="border rounded-md p-3 bg-gray-50">
+                                <p class="text-xs text-gray-400 mb-2 font-bold">{"해설 미리보기"}</p>
+                                <div class="prose prose-sm max-w-none text-gray-700">
+                                    <Markdown content={(*explanation).clone()} />
+                                </div>
+                            </div>
+                        }
+                    </div>
                 </div>
 
                 {if let Some(err) = &*error {
-                    html! {
-                        <div class="text-red-600 text-sm">
-                            {err}
-                        </div>
-                    }
+                    html! { <div class="text-red-600 text-sm">{err}</div> }
                 } else {
                     html! {}
                 }}
 
                 <div class="flex justify-end space-x-3">
                     <Link<Route> to={Route::Certificates}>
-                        <button
-                            type="button"
-                            class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-                        >
+                        <button type="button" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
                             {"취소"}
                         </button>
                     </Link<Route>>

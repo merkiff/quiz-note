@@ -1,6 +1,7 @@
 use crate::models::{Certificate, Question, QuestionOption};
 use crate::routes::Route;
 use crate::services::{CertificateService, QuestionService};
+use crate::components::Markdown; // [추가됨]
 use chrono::Utc;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
@@ -44,14 +45,12 @@ pub fn quiz_page(props: &QuizPageProps) -> Html {
 
         use_effect_with(certificate_id.clone(), move |_| {
             spawn_local(async move {
-                // 자격증 정보 로드
                 if let Ok(certs) = CertificateService::get_all().await {
                     if let Some(cert) = certs.into_iter().find(|c| c.id == certificate_id) {
                         certificate.set(Some(cert));
                     }
                 }
                 
-                // 문제 로드
                 match QuestionService::get_by_certificate(&certificate_id).await {
                     Ok(mut quests) if !quests.is_empty() => {
                         let mut rng = thread_rng();
@@ -83,9 +82,7 @@ pub fn quiz_page(props: &QuizPageProps) -> Html {
                     let mut updated_question = question.clone();
                     
                     if option.is_correct {
-                        // 정답일 경우
                         if tried_incorrect_options.is_empty() {
-                            // 첫 시도에 정답
                             updated_question.correct_count += 1;
                             correct_answer_count.set(*correct_answer_count + 1);
                         }
@@ -99,11 +96,9 @@ pub fn quiz_page(props: &QuizPageProps) -> Html {
                         });
 
                     } else {
-                        // 오답일 경우
                         if !tried_incorrect_options.contains(&option.id) {
                             tried_incorrect_options.insert(option.id);
                              if tried_incorrect_options.len() == 1 {
-                                // 해당 문제에 대한 첫 시도가 오답일 때만 attempt_count 증가
                                 updated_question.attempt_count += 1;
                                 updated_question.last_attempt = Some(Utc::now());
                             }
@@ -115,7 +110,6 @@ pub fn quiz_page(props: &QuizPageProps) -> Html {
                         }
                     }
 
-                    // 통계 업데이트는 정답을 맞췄거나, 첫 오답일 경우에만 실행
                      spawn_local(async move {
                         let _ = QuestionService::update_stats(&updated_question).await;
                     });
@@ -157,19 +151,13 @@ pub fn quiz_page(props: &QuizPageProps) -> Html {
     html! {
         <div class="max-w-4xl mx-auto px-4 py-5 sm:p-6">
             {match current_state {
-                QuizState::Loading => html! {
-                    <div class="text-center py-12">
-                        <p class="text-gray-500">{"문제를 불러오는 중..."}</p>
-                    </div>
-                },
+                QuizState::Loading => html! { <div class="text-center py-12"><p class="text-gray-500">{"문제를 불러오는 중..."}</p></div> },
 
                 QuizState::NoQuestions => html! {
                     <div class="text-center py-12">
                         <p class="text-gray-500 mb-4">{"아직 등록된 문제가 없습니다."}</p>
                         <Link<Route> to={Route::NewQuestion}>
-                            <button class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">
-                                {"문제 만들기"}
-                            </button>
+                            <button class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">{"문제 만들기"}</button>
                         </Link<Route>>
                     </div>
                 },
@@ -188,16 +176,14 @@ pub fn quiz_page(props: &QuizPageProps) -> Html {
                                         }}
                                     </div>
                                     <div class="w-full bg-gray-200 rounded-full h-2">
-                                        <div
-                                            class="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                                            style={format!("width: {}%", (current_index + 1) * 100 / questions.len())}
-                                        />
+                                        <div class="bg-blue-600 h-2 rounded-full transition-all duration-300" style={format!("width: {}%", (current_index + 1) * 100 / questions.len())} />
                                     </div>
                                 </div>
 
                                 <div class="bg-white shadow rounded-lg p-6 mb-6">
-                                    <h3 class="text-lg font-medium text-gray-900 mb-4">
-                                        {&question.content}
+                                    // [수정됨] 문제 내용 마크다운 적용
+                                    <h3 class="text-lg font-medium text-gray-900 mb-4 prose max-w-none">
+                                        <Markdown content={question.content.clone()} />
                                     </h3>
 
                                     <div class="space-y-3">
@@ -228,23 +214,27 @@ pub fn quiz_page(props: &QuizPageProps) -> Html {
                                                     class={classes}
                                                 >
                                                     <div class="flex items-start">
-                                                        <span class="mr-3 font-medium">{format!("{}.", option.display_order + 1)}</span>
+                                                        <span class="mr-3 font-medium pt-1">{format!("{}.", option.display_order + 1)}</span>
                                                         <div class="flex-1">
-                                                            <p>{&option.content}</p>
+                                                            // [수정됨] 보기 내용 마크다운 적용
+                                                            <div class="prose prose-sm max-w-none">
+                                                                <Markdown content={option.content.clone()} />
+                                                            </div>
                                                             {if (is_solved || is_tried_incorrect) && !option.explanation.is_empty() {
                                                                 html! {
-                                                                    <p class="mt-2 text-sm text-gray-600">
-                                                                        {&option.explanation}
-                                                                    </p>
+                                                                    // [수정됨] 보기 해설 마크다운 적용
+                                                                    <div class="mt-2 text-sm text-gray-600 prose prose-sm max-w-none bg-white p-2 rounded border border-gray-100">
+                                                                        <Markdown content={option.explanation.clone()} />
+                                                                    </div>
                                                                 }
                                                             } else {
                                                                 html! {}
                                                             }}
                                                         </div>
                                                         {if show_correct {
-                                                            html! { <span class="ml-2 text-green-600 font-bold">{"✓ 정답"}</span> }
+                                                            html! { <span class="ml-2 text-green-600 font-bold">{"✓"}</span> }
                                                         } else if is_tried_incorrect {
-                                                            html! { <span class="ml-2 text-red-600 font-bold">{"✗ 오답"}</span> }
+                                                            html! { <span class="ml-2 text-red-600 font-bold">{"✗"}</span> }
                                                         } else {
                                                             html! {}
                                                         }}
@@ -256,9 +246,12 @@ pub fn quiz_page(props: &QuizPageProps) -> Html {
 
                                     {if is_solved && !question.explanation.is_empty() {
                                         html! {
-                                            <div class="mt-6 p-4 bg-gray-50 rounded-lg">
+                                            <div class="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
                                                 <h4 class="font-medium text-gray-900 mb-2">{"전체 해설"}</h4>
-                                                <p class="text-gray-700">{&question.explanation}</p>
+                                                // [수정됨] 전체 해설 마크다운 적용
+                                                <div class="text-gray-700 prose prose-sm max-w-none">
+                                                    <Markdown content={question.explanation.clone()} />
+                                                </div>
                                             </div>
                                         }
                                     } else {
@@ -268,25 +261,16 @@ pub fn quiz_page(props: &QuizPageProps) -> Html {
 
                                 <div class="flex justify-between">
                                     <Link<Route> to={Route::CertificateDetail { id: props.certificate_id.clone() }}>
-                                        <button class="text-gray-600 hover:text-gray-900">
-                                            {"← 돌아가기"}
-                                        </button>
+                                        <button class="text-gray-600 hover:text-gray-900">{"← 돌아가기"}</button>
                                     </Link<Route>>
                                     {if is_solved {
                                         html! {
-                                            <button
-                                                onclick={on_next_question}
-                                                class="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700"
-                                            >
+                                            <button onclick={on_next_question} class="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700">
                                                 {if current_index == questions.len() - 1 { "결과 보기" } else { "다음 문제" }}
                                             </button>
                                         }
                                     } else {
-                                        html! {
-                                            <div class="text-gray-500 italic">
-                                                {"정답을 선택하면 다음으로 넘어갈 수 있습니다."}
-                                            </div>
-                                        }
+                                        html! { <div class="text-gray-500 italic">{"정답을 선택하면 다음으로 넘어갈 수 있습니다."}</div> }
                                     }}
                                 </div>
                             </div>
@@ -295,35 +279,21 @@ pub fn quiz_page(props: &QuizPageProps) -> Html {
                         html! {}
                     }
                 },
-
                 QuizState::Completed { total_questions, correct_answers } => html! {
-                    <div class="bg-white shadow rounded-lg p-8 text-center">
+                     <div class="bg-white shadow rounded-lg p-8 text-center">
                         <h2 class="text-2xl font-bold text-gray-900 mb-4">{"퀴즈 완료!"}</h2>
                         <div class="mb-6">
-                            <p class="text-4xl font-bold text-blue-600 mb-2">
-                                {format!("{}/{}", correct_answers, total_questions)}
-                            </p>
+                            <p class="text-4xl font-bold text-blue-600 mb-2">{format!("{}/{}", correct_answers, total_questions)}</p>
                             <p class="text-gray-600">
-                                {
-                                    if total_questions > 0 {
-                                        format!("첫 시도 정답률: {}%", correct_answers * 100 / total_questions)
-                                    } else {
-                                        "정답률: 0%".to_string()
-                                    }
-                                }
+                                {if total_questions > 0 { format!("첫 시도 정답률: {}%", correct_answers * 100 / total_questions) } else { "정답률: 0%".to_string() }}
                             </p>
                         </div>
                         <div class="space-y-3">
                            <Link<Route> to={Route::Quiz { certificate_id: props.certificate_id.clone() }} classes="block">
-                                <button class="w-full bg-blue-600 text-white px-6 py-3 rounded-md hover:bg-blue-700">
-                                    {"다시 풀기"}
-                                </button>
+                                <button class="w-full bg-blue-600 text-white px-6 py-3 rounded-md hover:bg-blue-700">{"다시 풀기"}</button>
                             </Link<Route>>
-
                             <Link<Route> to={Route::CertificateDetail { id: props.certificate_id.clone() }} classes="block">
-                                <button class="w-full bg-gray-200 text-gray-700 px-6 py-3 rounded-md hover:bg-gray-300">
-                                    {"자격증 페이지로"}
-                                </button>
+                                <button class="w-full bg-gray-200 text-gray-700 px-6 py-3 rounded-md hover:bg-gray-300">{"자격증 페이지로"}</button>
                             </Link<Route>>
                         </div>
                     </div>
